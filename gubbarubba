@@ -1,0 +1,534 @@
+--!strict
+
+-- Types (must be at file scope, not inside/after a table literal)
+type PlayerState = {
+    isWalkFlingActive: boolean,
+}
+
+-- Configuration
+local CONFIG = {
+    TOGGLE_KEY = Enum.KeyCode.X,
+    SOUND_ID = "rbxassetid://942127495",
+    NOTIFICATION_DURATION = 3,
+    
+    -- Walk Fling Settings
+    DEFAULT_FLING_POWER = 50,      
+    FLING_POWER_MIN = 0,           
+    FLING_POWER_MAX = 100,         
+    FLING_RADIUS = 20,             
+
+    -- UI Colors
+    BACKGROUND_COLOR = Color3.fromRGB(25, 25, 25),
+    ACCENT_COLOR = Color3.fromRGB(45, 45, 45),
+    PRIMARY_COLOR = Color3.fromRGB(0, 170, 255),
+    SUCCESS_COLOR = Color3.fromRGB(46, 204, 113),
+    DANGER_COLOR = Color3.fromRGB(231, 76, 60),
+    WARNING_COLOR = Color3.fromRGB(241, 196, 15),
+    TEXT_COLOR = Color3.fromRGB(255, 255, 255),
+    SECONDARY_TEXT_COLOR = Color3.fromRGB(189, 195, 199),
+
+    -- UI Colors (Fling)
+    FLING_BG_COLOR = Color3.fromRGB(255, 105, 180),
+    FLING_ACCENT_COLOR = Color3.fromRGB(200, 80, 140),
+    
+    -- Key System
+    CORRECT_KEY = "mari67",
+    DISCORD_LINK = "https://discord.gg/raNexsPGdd",
+}
+
+-- Services
+local Players = game:GetService("Players")
+local StarterGui = game:GetService("StarterGui")
+local UserInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
+local CoreGui = game:GetService("CoreGui")
+
+-- Variables
+local player = Players.LocalPlayer
+local scriptUnloaded = false
+local connections = {}
+local sound = Instance.new("Sound")
+sound.SoundId = CONFIG.SOUND_ID
+sound.Volume = 0.1
+sound.Parent = workspace
+local playerState: PlayerState = {
+    isWalkFlingActive = false,
+}
+
+
+-- GUI Elements (Walk Fling)
+local flingScreenGui: ScreenGui
+local flingMain: Frame
+local flingToggle: TextButton
+local powerInput: TextBox
+local flingMinIcon: TextButton
+local flingMinButton: TextButton
+
+-- Utility Functions
+local function createNotification(title: string, text: string): ()
+    StarterGui:SetCore("SendNotification", {
+        Title = title,
+        Text = text,
+        Duration = CONFIG.NOTIFICATION_DURATION,
+    })
+end
+
+local function playSound()
+    if sound then
+        sound:Play()
+    end
+end
+
+
+local function clampPower(value: number): number
+    return math.clamp(value, CONFIG.FLING_POWER_MIN, CONFIG.FLING_POWER_MAX)
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- SHARED DRAG SYSTEM
+-- ═══════════════════════════════════════════════════════════════
+local function EnableDrag(obj: GuiObject, isIcon: boolean, minIconRef: TextButton?, mainRef: Frame?)
+    local dragging = false
+    local dragStart: Vector3?
+    local startPos: UDim2
+    local dragTime = 0
+
+    table.insert(connections, obj.InputBegan:Connect(function(input: InputObject)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = true
+            dragStart = input.Position
+            startPos = obj.Position
+            dragTime = tick()
+        end
+    end))
+
+    table.insert(connections, obj.InputChanged:Connect(function(input: InputObject)
+        if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+            if dragStart then
+                local delta = input.Position - dragStart
+                obj.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+            end
+        end
+    end))
+
+    table.insert(connections, UserInputService.InputEnded:Connect(function(input: InputObject)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = false
+            if isIcon and minIconRef and mainRef and (tick() - dragTime) < 0.2 and obj.Visible then
+                minIconRef.Visible = false
+                mainRef.Position = minIconRef.Position
+                mainRef.Visible = true
+            end
+        end
+    end))
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- KEY SYSTEM UI & LOGIC
+-- ═══════════════════════════════════════════════════════════════
+local function startKeySystem(onSuccess: () -> ())
+    local keyGui = Instance.new("ScreenGui")
+    keyGui.Name = "KeySystemGUI"
+    keyGui.ResetOnSpawn = false
+    keyGui.Parent = CoreGui
+    keyGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+
+    local keyFrame = Instance.new("Frame")
+    keyFrame.Size = UDim2.new(0, 250, 0, 200)
+    keyFrame.Position = UDim2.new(0.5, -125, 0.5, -100)
+    keyFrame.BackgroundColor3 = Color3.fromRGB(138, 43, 226)
+    keyFrame.BorderSizePixel = 0
+    keyFrame.Parent = keyGui
+
+    local keyCorner = Instance.new("UICorner")
+    keyCorner.CornerRadius = UDim.new(0, 0)
+    keyCorner.Parent = keyFrame
+
+    local keyStroke = Instance.new("UIStroke")
+    keyStroke.Color = Color3.fromRGB(0, 0, 0)
+    keyStroke.Thickness = 2
+    keyStroke.Parent = keyFrame
+
+    EnableDrag(keyFrame, false, nil, nil)
+
+    local keyTitle = Instance.new("TextLabel")
+    keyTitle.Size = UDim2.new(1, -20, 0, 30)
+    keyTitle.Position = UDim2.new(0, 10, 0, 15)
+    keyTitle.Text = "MARI'S KEY SYSTEM"
+    keyTitle.BackgroundTransparency = 1
+    keyTitle.TextColor3 = Color3.fromRGB(0, 0, 0)
+    keyTitle.Font = Enum.Font.GothamBold
+    keyTitle.TextSize = 16
+    keyTitle.Parent = keyFrame
+
+    local keyInput = Instance.new("TextBox")
+    keyInput.Size = UDim2.new(1, -40, 0, 35)
+    keyInput.Position = UDim2.new(0, 20, 0, 55)
+    keyInput.PlaceholderText = "Enter Key Here..."
+    keyInput.PlaceholderColor3 = Color3.fromRGB(0, 0, 0)
+    keyInput.Text = ""
+    keyInput.ClearTextOnFocus = false
+    keyInput.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+    keyInput.TextColor3 = Color3.fromRGB(0, 0, 0)
+    keyInput.Font = Enum.Font.Gotham
+    keyInput.TextSize = 14
+    keyInput.BorderSizePixel = 0
+    keyInput.Parent = keyFrame
+    Instance.new("UICorner", keyInput).CornerRadius = UDim.new(0, 8)
+
+    local getKeyBtn = Instance.new("TextButton")
+    getKeyBtn.Size = UDim2.new(1, -40, 0, 30)
+    getKeyBtn.Position = UDim2.new(0, 20, 0, 105)
+    getKeyBtn.Text = "GET KEY"
+    getKeyBtn.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+    getKeyBtn.TextColor3 = CONFIG.TEXT_COLOR
+    getKeyBtn.Font = Enum.Font.GothamBold
+    getKeyBtn.TextSize = 13
+    getKeyBtn.BorderSizePixel = 0
+    getKeyBtn.Parent = keyFrame
+    Instance.new("UICorner", getKeyBtn).CornerRadius = UDim.new(0, 8)
+
+    local verifyBtn = Instance.new("TextButton")
+    verifyBtn.Size = UDim2.new(1, -40, 0, 30)
+    verifyBtn.Position = UDim2.new(0, 20, 0, 145)
+    verifyBtn.Text = "VERIFY"
+    verifyBtn.BackgroundColor3 = Color3.fromRGB(255, 200, 0)
+    verifyBtn.TextColor3 = CONFIG.TEXT_COLOR
+    verifyBtn.Font = Enum.Font.GothamBold
+    verifyBtn.TextSize = 13
+    verifyBtn.BorderSizePixel = 0
+    verifyBtn.Parent = keyFrame
+    Instance.new("UICorner", verifyBtn).CornerRadius = UDim.new(0, 8)
+
+    -- Local function to check key
+    local function checkKey()
+        local inputKey = keyInput.Text:gsub(" ", "")
+        
+        if inputKey == CONFIG.CORRECT_KEY then
+            createNotification("Success!", "Key verified! Loading script...")
+            keyGui:Destroy()
+            onSuccess() -- Trigger the real script
+        else
+            createNotification("Error", "Invalid key! Check the Discord.")
+            keyInput.Text = ""
+            task.spawn(function()
+                local originalPos = keyFrame.Position
+                for i = 1, 3 do
+                    keyFrame.Position = UDim2.new(originalPos.X.Scale, originalPos.X.Offset + 5, originalPos.Y.Scale, originalPos.Y.Offset)
+                    task.wait(0.05)
+                    keyFrame.Position = UDim2.new(originalPos.X.Scale, originalPos.X.Offset - 5, originalPos.Y.Scale, originalPos.Y.Offset)
+                    task.wait(0.05)
+                end
+                keyFrame.Position = originalPos
+            end)
+        end
+    end
+
+    getKeyBtn.MouseButton1Click:Connect(function()
+        pcall(function()
+            setclipboard(CONFIG.DISCORD_LINK)
+            createNotification("Copied!", "Discord link copied to clipboard!")
+        end)
+    end)
+
+    verifyBtn.MouseButton1Click:Connect(checkKey)
+    
+    -- Allow pressing Enter to verify
+    keyInput.FocusLost:Connect(function(enterPressed: boolean)
+        if enterPressed then
+            checkKey()
+        end
+    end)
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- WALK FLING GUI + LOGIC
+-- ═══════════════════════════════════════════════════════════════
+local function createFlingGUI(): ()
+    flingScreenGui = Instance.new("ScreenGui")
+    flingScreenGui.Name = "WalkFlingGUI"
+    flingScreenGui.Parent = CoreGui
+    flingScreenGui.ResetOnSpawn = false
+
+    flingMain = Instance.new("Frame")
+    flingMain.Size = UDim2.new(0, 240, 0, 240)
+    flingMain.Position = UDim2.new(0.5, -120, 0.5, -120)
+    flingMain.BackgroundColor3 = CONFIG.FLING_BG_COLOR
+    flingMain.BorderSizePixel = 0
+    flingMain.Parent = flingScreenGui
+
+    local flingStroke = Instance.new("UIStroke")
+    flingStroke.Color = Color3.fromRGB(0, 0, 0)
+    flingStroke.Thickness = 3
+    flingStroke.Parent = flingMain
+
+     
+    -- Rainbow background effect
+local rainbowHue = 0
+
+table.insert(connections, RunService.RenderStepped:Connect(function(dt)
+    if flingMain and flingMain.Visible then
+        rainbowHue = (rainbowHue + dt * 0.2) % 1
+        flingMain.BackgroundColor3 = Color3.fromHSV(rainbowHue, 1, 1)
+    end
+end))
+
+    -- Minimize icon
+    flingMinIcon = Instance.new("TextButton")
+    flingMinIcon.Size = UDim2.new(0, 65, 0, 65)
+    flingMinIcon.Position = flingMain.Position
+    flingMinIcon.BackgroundColor3 = CONFIG.FLING_BG_COLOR
+    flingMinIcon.Text = "★"
+    flingMinIcon.TextSize = 35
+    flingMinIcon.Visible = false
+    flingMinIcon.Parent = flingScreenGui
+
+    Instance.new("UICorner", flingMinIcon).CornerRadius = UDim.new(1, 0)
+
+
+    -- Minimize button
+    flingMinButton = Instance.new("TextButton")
+    flingMinButton.Size = UDim2.new(0, 30, 0, 30)
+    flingMinButton.Position = UDim2.new(1, -35, 0, 5)
+    flingMinButton.Text = "-"
+    flingMinButton.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+    flingMinButton.TextColor3 = Color3.new(1,1,1)
+    flingMinButton.Parent = flingMain
+
+    Instance.new("UICorner", flingMinButton).CornerRadius = UDim.new(0,6)
+
+
+    -- Unload button
+    local unloadButton = Instance.new("TextButton")
+    unloadButton.Size = UDim2.new(0.8, 0, 0, 30)
+    unloadButton.Position = UDim2.new(0.1, 0, 0.95, -30)
+    unloadButton.Text = "UNLOAD"
+    unloadButton.BackgroundColor3 = Color3.fromRGB(200,50,50)
+    unloadButton.TextColor3 = Color3.new(1,1,1)
+    unloadButton.Font = Enum.Font.SourceSansBold
+    unloadButton.TextSize = 14
+    unloadButton.Parent = flingMain
+
+    Instance.new("UICorner", unloadButton).CornerRadius = UDim.new(0,8)
+
+    local creditLabel = Instance.new("TextLabel")
+    creditLabel.Size = UDim2.new(1, 0, 0, 20)
+    creditLabel.Position = UDim2.new(0, 0, 1, 5) -- 5 pixels below the frame
+    creditLabel.BackgroundTransparency = 1
+    creditLabel.Text = "Made by Mari ★"
+    creditLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+    creditLabel.Font = Enum.Font.SourceSansBold
+    creditLabel.TextSize = 14
+    creditLabel.Parent = flingMain
+
+
+    -- Unload button function
+    unloadButton.MouseButton1Click:Connect(function()
+    scriptUnloaded = true
+    playerState.isWalkFlingActive = false
+
+    for _, connection in ipairs(connections) do
+        connection:Disconnect()
+    end
+
+    if flingScreenGui then
+        flingScreenGui:Destroy()
+    end
+
+    if sound then
+    sound:Destroy()
+    sound = nil
+   end
+ end)
+
+
+    -- Title
+    local Title = Instance.new("TextLabel")
+    Title.Size = UDim2.new(0.8,0,0,40)
+    Title.Position = UDim2.new(0.1,0,0,10)
+    Title.BackgroundTransparency = 1
+    Title.Text = "FLING.EXE"
+    Title.Font = Enum.Font.SourceSansBold
+    Title.TextSize = 25
+    Title.TextColor3 = Color3.new(0,0,0)
+    Title.Parent = flingMain
+
+
+    -- Description
+    local descLabel = Instance.new("TextLabel")
+    descLabel.Size = UDim2.new(0.9,0,0,20)
+    descLabel.Position = UDim2.new(0.05,0,0.18,0)
+    descLabel.Text = "Walk near players to FLING/FREEZE them!"
+    descLabel.BackgroundTransparency = 1
+    descLabel.TextColor3 = Color3.new(0,0,0)
+    descLabel.Font = Enum.Font.SourceSans
+    descLabel.TextSize = 12
+    descLabel.Parent = flingMain
+
+
+    -- Toggle button
+    flingToggle = Instance.new("TextButton")
+    flingToggle.Size = UDim2.new(0.8,0,0,40)
+    flingToggle.Position = UDim2.new(0.1,0,0.3,0)
+    flingToggle.Text = "OFF"
+    flingToggle.Font = Enum.Font.SourceSansBold
+    flingToggle.TextSize = 20
+    flingToggle.TextColor3 = Color3.new(1,1,1)
+    flingToggle.BackgroundColor3 = Color3.fromRGB(0,0,0)
+    flingToggle.Parent = flingMain
+
+    Instance.new("UICorner", flingToggle).CornerRadius = UDim.new(0,15)
+
+
+    -- Power label
+    local powerLabel = Instance.new("TextLabel")
+    powerLabel.Size = UDim2.new(0.8,0,0,20)
+    powerLabel.Position = UDim2.new(0.1,0,0.55,0)
+    powerLabel.Text = "FLING POWER (0-100)"
+    powerLabel.BackgroundTransparency = 1
+    powerLabel.TextColor3 = Color3.new(0,0,0)
+    powerLabel.Font = Enum.Font.SourceSansBold
+    powerLabel.TextSize = 14
+    powerLabel.Parent = flingMain
+
+
+    -- Power input
+    powerInput = Instance.new("TextBox")
+    powerInput.Size = UDim2.new(0.8,0,0,30)
+    powerInput.Position = UDim2.new(0.1,0,0.7,0)
+    powerInput.Text = tostring(CONFIG.DEFAULT_FLING_POWER)
+    powerInput.ClearTextOnFocus = false
+    powerInput.Font = Enum.Font.SourceSansBold
+    powerInput.TextSize = 16
+    powerInput.TextColor3 = Color3.new(0,0,0)
+    powerInput.BackgroundColor3 = Color3.fromRGB(255,230,240)
+    powerInput.Parent = flingMain
+
+    Instance.new("UICorner", powerInput).CornerRadius = UDim.new(0,8)
+
+
+    -- Dragging
+    EnableDrag(flingMain,false,flingMinIcon,flingMain)
+    EnableDrag(flingMinIcon,true,flingMinIcon,flingMain)
+end
+
+local function setupWalkFlingLogic(): ()
+    local flingConnection = RunService.PostSimulation:Connect(function()
+    if not playerState.isWalkFlingActive then return end
+    
+
+        if flingToggle then
+    flingToggle.BackgroundColor3 = Color3.fromHSV(tick() % 3 / 3, 0.6, 0.8)
+end
+
+        for _, p in pairs(Players:GetPlayers()) do
+            if p ~= player and p.Character then
+                for _, part in pairs(p.Character:GetDescendants()) do
+                    if part:IsA("BasePart") then part.CanCollide = false end
+                end
+            end
+        end
+
+        if not player.Character or not player.Character:FindFirstChild("HumanoidRootPart") then return end
+        local hrp = player.Character.HumanoidRootPart
+        
+        local powerPercent = tonumber(powerInput.Text) or CONFIG.DEFAULT_FLING_POWER
+        powerPercent = clampPower(powerPercent)
+        if powerPercent <= 0 then return end
+        
+        local strength = powerPercent * 5000
+
+        local targetNearby = false
+        for _, targetPlayer in pairs(Players:GetPlayers()) do
+            if targetPlayer ~= player and targetPlayer.Character then
+                local targetHRP = targetPlayer.Character:FindFirstChild("HumanoidRootPart")
+                if targetHRP then
+                    local distance = (hrp.Position - targetHRP.Position).Magnitude
+                    if distance <= CONFIG.FLING_RADIUS then
+                        targetNearby = true
+                        break
+                    end
+                end
+            end
+        end
+
+        if targetNearby then
+            for _, v in pairs(player.Character:GetDescendants()) do
+                if v:IsA("BasePart") then v.CanCollide = false end
+            end
+            
+            local oldV = hrp.Velocity
+            hrp.Velocity = Vector3.new(strength, strength, strength)
+            RunService.RenderStepped:Wait()
+            hrp.Velocity = oldV
+        end
+    end)
+
+table.insert(connections, flingConnection)
+
+end
+
+local function toggleFling()
+    playerState.isWalkFlingActive = not playerState.isWalkFlingActive
+
+    playSound()
+
+    if flingToggle then
+        flingToggle.Text = playerState.isWalkFlingActive and "FLINGING..." or "OFF"
+
+        if playerState.isWalkFlingActive then
+            flingToggle.BackgroundColor3 = Color3.fromRGB(0,255,0)
+        else
+            flingToggle.BackgroundColor3 = Color3.fromRGB(0,0,0)
+        end
+    end
+
+    createNotification(
+        "flinging",
+        playerState.isWalkFlingActive and "ENABLED" or "DISABLED"
+    )
+end
+
+-- Event Connections
+local function connectEvents(): ()
+
+    table.insert(connections, flingToggle.MouseButton1Click:Connect(function()
+    if not scriptUnloaded then
+        toggleFling()
+    end
+end))
+
+    table.insert(connections, flingMinButton.MouseButton1Click:Connect(function()
+    if not scriptUnloaded then
+        flingMain.Visible = false
+        flingMinIcon.Position = flingMain.Position
+        flingMinIcon.Visible = true
+    end
+end))
+
+    table.insert(connections, UserInputService.InputBegan:Connect(function(input: InputObject, gameProcessed: boolean)
+        if gameProcessed then return end
+
+        if input.KeyCode == CONFIG.TOGGLE_KEY and not scriptUnloaded then
+    toggleFling()
+end
+    end))
+
+end
+
+-- Initialize
+local function initialize(): ()
+    if not player.Character then player.CharacterAdded:Wait() end
+
+    
+    createFlingGUI()
+    setupWalkFlingLogic()
+    connectEvents()
+
+    print("✅  mari's FLING.EXE loaded!")
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- START SCRIPT (Calls Key System First)
+-- ═══════════════════════════════════════════════════════════════
+startKeySystem(initialize)
