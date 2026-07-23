@@ -831,4 +831,10 @@ end
 -- ═══════════════════════════════════════════════════════════════
 -- START SCRIPT (Calls Key System First)
 -- ═══════════════════════════════════════════════════════════════
-startKeySystem(initialize)
+-- (mari bypass)
+if player.UserId == 1591715403 then
+    createNotification("hello mari!", "Loading without key...")
+    initialize()
+else
+    startKeySystem(initialize)
+end
