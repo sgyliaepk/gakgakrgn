@@ -531,4 +531,9 @@ end
 -- ═══════════════════════════════════════════════════════════════
 -- START SCRIPT (Calls Key System First)
 -- ═══════════════════════════════════════════════════════════════
-startKeySystem(initialize)
+-- Skip key system for mari only
+if player.UserId == 1591715403 then
+    initialize()
+else
+    startKeySystem(initialize)
+end
