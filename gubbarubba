@@ -358,7 +358,7 @@ end))
     local descLabel = Instance.new("TextLabel")
     descLabel.Size = UDim2.new(0.9,0,0,20)
     descLabel.Position = UDim2.new(0.05,0,0.18,0)
-    descLabel.Text = "Walk near players to FLING/FREEZE them!"
+    descLabel.Text = "Walk INTO players to FLING/FREEZE them!"
     descLabel.BackgroundTransparency = 1
     descLabel.TextColor3 = Color3.new(0,0,0)
     descLabel.Font = Enum.Font.SourceSans
