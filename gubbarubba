@@ -47,6 +47,10 @@ local CoreGui = game:GetService("CoreGui")
 local player = Players.LocalPlayer
 local scriptUnloaded = false
 local connections = {}
+local targetPlayer: Player? = nil
+local targetMode = false
+local rejoinCooldown = false
+local dropdownConnections = {}
 local sound = Instance.new("Sound")
 sound.SoundId = CONFIG.SOUND_ID
 sound.Volume = 0.1
@@ -63,6 +67,11 @@ local flingToggle: TextButton
 local powerInput: TextBox
 local flingMinIcon: TextButton
 local flingMinButton: TextButton
+local targetInput: TextBox
+local targetToggle: TextButton
+local targetDropdown: Frame
+local targetArrow: TextButton
+local rejoinButton: TextButton
 
 -- Utility Functions
 local function createNotification(title: string, text: string): ()
@@ -251,7 +260,7 @@ local function createFlingGUI(): ()
     flingScreenGui.ResetOnSpawn = false
 
     flingMain = Instance.new("Frame")
-    flingMain.Size = UDim2.new(0, 240, 0, 240)
+    flingMain.Size = UDim2.new(0, 240, 0, 300)
     flingMain.Position = UDim2.new(0.5, -120, 0.5, -120)
     flingMain.BackgroundColor3 = CONFIG.FLING_BG_COLOR
     flingMain.BorderSizePixel = 0
@@ -301,7 +310,7 @@ end))
     -- Unload button
     local unloadButton = Instance.new("TextButton")
     unloadButton.Size = UDim2.new(0.8, 0, 0, 30)
-    unloadButton.Position = UDim2.new(0.1, 0, 0.95, -30)
+    unloadButton.Position = UDim2.new(0.05, 0, 0.98, -30)
     unloadButton.Text = "UNLOAD"
     unloadButton.BackgroundColor3 = Color3.fromRGB(200,50,50)
     unloadButton.TextColor3 = Color3.new(1,1,1)
@@ -345,7 +354,7 @@ end))
     -- Title
     local Title = Instance.new("TextLabel")
     Title.Size = UDim2.new(0.8,0,0,40)
-    Title.Position = UDim2.new(0.1,0,0,10)
+    Title.Position = UDim2.new(0.05,0,0,10)
     Title.BackgroundTransparency = 1
     Title.Text = "FLING.EXE"
     Title.Font = Enum.Font.SourceSansBold
@@ -353,12 +362,23 @@ end))
     Title.TextColor3 = Color3.new(0,0,0)
     Title.Parent = flingMain
 
+    --version title
+    local versionLabel = Instance.new("TextLabel")
+    versionLabel.Size = UDim2.new(0.8,0,0,15)
+    versionLabel.Position = UDim2.new(0.05,0,0,38)
+    versionLabel.BackgroundTransparency = 1
+    versionLabel.Text = "v1.1"
+    versionLabel.TextColor3 = Color3.fromRGB(0,0,0)
+    versionLabel.Font = Enum.Font.SourceSans
+    versionLabel.TextSize = 12
+    versionLabel.Parent = flingMain
+
 
     -- Description
     local descLabel = Instance.new("TextLabel")
     descLabel.Size = UDim2.new(0.9,0,0,20)
-    descLabel.Position = UDim2.new(0.05,0,0.18,0)
-    descLabel.Text = "Walk INTO players to FLING/FREEZE them!"
+    descLabel.Position = UDim2.new(0.00,0,0.18,0)
+    descLabel.Text = "Walk near players to FLING/FREEZE them!"
     descLabel.BackgroundTransparency = 1
     descLabel.TextColor3 = Color3.new(0,0,0)
     descLabel.Font = Enum.Font.SourceSans
@@ -369,7 +389,7 @@ end))
     -- Toggle button
     flingToggle = Instance.new("TextButton")
     flingToggle.Size = UDim2.new(0.8,0,0,40)
-    flingToggle.Position = UDim2.new(0.1,0,0.3,0)
+    flingToggle.Position = UDim2.new(0.05,0,0.3,0)
     flingToggle.Text = "OFF"
     flingToggle.Font = Enum.Font.SourceSansBold
     flingToggle.TextSize = 20
@@ -383,7 +403,7 @@ end))
     -- Power label
     local powerLabel = Instance.new("TextLabel")
     powerLabel.Size = UDim2.new(0.8,0,0,20)
-    powerLabel.Position = UDim2.new(0.1,0,0.55,0)
+    powerLabel.Position = UDim2.new(0.05,0,0.44,0)
     powerLabel.Text = "FLING POWER (0-100)"
     powerLabel.BackgroundTransparency = 1
     powerLabel.TextColor3 = Color3.new(0,0,0)
@@ -395,7 +415,7 @@ end))
     -- Power input
     powerInput = Instance.new("TextBox")
     powerInput.Size = UDim2.new(0.8,0,0,30)
-    powerInput.Position = UDim2.new(0.1,0,0.7,0)
+    powerInput.Position = UDim2.new(0.05,0,0.54,0)
     powerInput.Text = tostring(CONFIG.DEFAULT_FLING_POWER)
     powerInput.ClearTextOnFocus = false
     powerInput.Font = Enum.Font.SourceSansBold
@@ -406,11 +426,146 @@ end))
 
     Instance.new("UICorner", powerInput).CornerRadius = UDim.new(0,8)
 
+    -- Target Mode Button
+    targetToggle = Instance.new("TextButton")
+    targetToggle.Size = UDim2.new(0.8,0,0,30)
+    targetToggle.Position = UDim2.new(0.05,0,0.66,0)
+    targetToggle.Text = "TARGET MODE: OFF"
+    targetToggle.BackgroundColor3 = Color3.fromRGB(0,0,0)
+    targetToggle.TextColor3 = Color3.new(1,1,1)
+    targetToggle.Font = Enum.Font.SourceSansBold
+    targetToggle.TextSize = 14
+    targetToggle.Parent = flingMain
+
+    Instance.new("UICorner", targetToggle).CornerRadius = UDim.new(0,8)
+
+
+    -- Target Username Box
+    targetInput = Instance.new("TextBox")
+    targetInput.Size = UDim2.new(0.8,0,0,30)
+    targetInput.Position = UDim2.new(0.05,0,0.76,0)
+    targetInput.PlaceholderText = "Target username..."
+    targetInput.Text = ""
+    targetInput.BackgroundColor3 = Color3.fromRGB(255,230,240)
+    targetInput.TextColor3 = Color3.new(0,0,0)
+    targetInput.Font = Enum.Font.SourceSansBold
+    targetInput.TextSize = 14
+    targetInput.Parent = flingMain
+
+    Instance.new("UICorner", targetInput).CornerRadius = UDim.new(0,8)
+
+    targetInput.Focused:Connect(function()
+    if targetPlayer then
+        targetInput.Text = ""
+        targetPlayer = nil
+        targetMode = false
+
+        if targetToggle then
+            targetToggle.Text = "TARGET MODE: OFF"
+        end
+
+        createNotification("Target Unlocked", "Previous target removed")
+    end
+end)
+
+    --target arrow button
+    targetArrow = Instance.new("TextButton")
+    targetArrow.Size = UDim2.new(0,35,0,30)
+    targetArrow.Position = UDim2.new(0.85,0,0.76,0)
+    targetArrow.Text = "▼"
+    targetArrow.BackgroundColor3 = Color3.fromRGB(0,0,0)
+    targetArrow.TextColor3 = Color3.new(1,1,1)
+    targetArrow.Font = Enum.Font.SourceSansBold
+    targetArrow.TextSize = 10
+    targetArrow.Parent = flingMain
+
+    Instance.new("UICorner", targetArrow).CornerRadius = UDim.new(0,8)
+
+   -- Rejoin button
+   rejoinButton = Instance.new("TextButton")
+   rejoinButton.Size = UDim2.new(0,35,0,30)
+   rejoinButton.Position = UDim2.new(0.85,0,0.88,0)
+   rejoinButton.Text = "R"
+   rejoinButton.BackgroundColor3 = Color3.fromRGB(0,255,0)
+   rejoinButton.TextColor3 = Color3.fromRGB(0,0,0)
+   rejoinButton.Font = Enum.Font.SourceSansBold
+   rejoinButton.TextSize = 22
+   rejoinButton.TextXAlignment = Enum.TextXAlignment.Left
+   rejoinButton.TextYAlignment = Enum.TextYAlignment.Center
+   rejoinButton.Parent = flingMain
+
+   local padding = Instance.new("UIPadding")
+   padding.PaddingLeft = UDim.new(0, 11)
+   padding.Parent = rejoinButton
+
+   Instance.new("UICorner", rejoinButton).CornerRadius = UDim.new(0,8)
+
+    -- Target dropdown
+    targetDropdown = Instance.new("ScrollingFrame")
+    targetDropdown.Size = UDim2.new(0.8,0,0,140)
+    targetDropdown.Position = UDim2.new(0.05,0,0.87,0)
+    targetDropdown.BackgroundColor3 = Color3.fromRGB(30,30,30)
+    targetDropdown.Visible = false
+    targetDropdown.ScrollBarThickness = 6
+    targetDropdown.CanvasSize = UDim2.new(0,0,0,0)
+    targetDropdown.AutomaticCanvasSize = Enum.AutomaticSize.Y
+    targetDropdown.Parent = flingMain
+
+    -- Rounded corners
+    local dropdownCorner = Instance.new("UICorner")
+    dropdownCorner.CornerRadius = UDim.new(0,8)
+    dropdownCorner.Parent = targetDropdown
+
+    -- Border
+    local dropdownStroke = Instance.new("UIStroke")
+    dropdownStroke.Color = Color3.fromRGB(0,0,0)
+    dropdownStroke.Thickness = 2
+    dropdownStroke.Parent = targetDropdown
+
+    local dropdownLayout = Instance.new("UIListLayout")
+    dropdownLayout.Parent = targetDropdown
+    dropdownLayout.Padding = UDim.new(0,2)
+
+
 
     -- Dragging
     EnableDrag(flingMain,false,flingMinIcon,flingMain)
     EnableDrag(flingMinIcon,true,flingMinIcon,flingMain)
 end
+
+local function updateTarget()
+    targetPlayer = nil
+
+    local name = targetInput.Text:lower()
+
+    if name == "" then
+        createNotification("Error", "Enter a username")
+        return
+    end
+
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p ~= player then
+            if p.Name:lower():sub(1, #name) == name then
+                targetPlayer = p
+
+                -- Enable target mode automatically
+                targetMode = true
+
+                if targetToggle then
+                    targetToggle.Text = "TARGET MODE: ON"
+                end
+
+                createNotification("Target Locked", p.Name)
+                return
+            end
+        end
+    end
+
+    createNotification("Error", "Player not found")
+end
+
+
+
 
 local function setupWalkFlingLogic(): ()
     local flingConnection = RunService.PostSimulation:Connect(function()
@@ -439,18 +594,43 @@ end
         local strength = powerPercent * 5000
 
         local targetNearby = false
-        for _, targetPlayer in pairs(Players:GetPlayers()) do
-            if targetPlayer ~= player and targetPlayer.Character then
-                local targetHRP = targetPlayer.Character:FindFirstChild("HumanoidRootPart")
-                if targetHRP then
-                    local distance = (hrp.Position - targetHRP.Position).Magnitude
-                    if distance <= CONFIG.FLING_RADIUS then
-                        targetNearby = true
-                        break
-                    end
+
+if targetMode then
+
+    if not targetPlayer then
+        return
+    end
+
+    if targetPlayer.Character then
+        local targetHRP = targetPlayer.Character:FindFirstChild("HumanoidRootPart")
+
+        if targetHRP then
+            local distance = (hrp.Position - targetHRP.Position).Magnitude
+
+            if distance <= CONFIG.FLING_RADIUS then
+                targetNearby = true
+            end
+        end
+    end
+
+else
+
+    for _, p in pairs(Players:GetPlayers()) do
+        if p ~= player and p.Character then
+            local targetHRP = p.Character:FindFirstChild("HumanoidRootPart")
+
+            if targetHRP then
+                local distance = (hrp.Position - targetHRP.Position).Magnitude
+
+                if distance <= CONFIG.FLING_RADIUS then
+                    targetNearby = true
+                    break
                 end
             end
         end
+    end
+
+end
 
         if targetNearby then
             for _, v in pairs(player.Character:GetDescendants()) do
@@ -492,6 +672,126 @@ end
 -- Event Connections
 local function connectEvents(): ()
 
+table.insert(connections, rejoinButton.MouseButton1Click:Connect(function()
+
+    if rejoinCooldown then
+        createNotification("Cooldown", "Please wait before using this again.")
+        return
+    end
+
+    rejoinCooldown = true
+    
+    playerState.isWalkFlingActive = false
+
+    createNotification("Rejoining", "Teleporting back into the server...")
+
+
+local TeleportService = game:GetService("TeleportService")
+
+local success, err = pcall(function()
+    TeleportService:TeleportToPlaceInstance(
+        game.PlaceId,
+        game.JobId,
+        player
+    )
+end)
+
+if not success then
+    createNotification("Teleport Failed", tostring(err))
+    rejoinCooldown = false
+    return
+end
+
+task.delay(10, function()
+    rejoinCooldown = false
+end)
+
+end))
+
+
+table.insert(connections, Players.PlayerRemoving:Connect(function(p)
+    if targetPlayer == p then
+        targetPlayer = nil
+        targetInput.Text = ""
+        createNotification("Target Lost", "Player left the server")
+    end
+end))
+
+    table.insert(connections, targetArrow.MouseButton1Click:Connect(function()
+
+    targetDropdown.Visible = not targetDropdown.Visible
+
+    if targetDropdown.Visible then
+
+    -- Clear old button connections
+    for _, connection in ipairs(dropdownConnections) do
+        connection:Disconnect()
+    end
+
+    table.clear(dropdownConnections)
+
+    -- Remove old buttons
+    for _, child in pairs(targetDropdown:GetChildren()) do
+        if child:IsA("TextButton") then
+            child:Destroy()
+        end
+    end
+
+        for _, p in ipairs(Players:GetPlayers()) do
+            if p ~= player then
+
+                local button = Instance.new("TextButton")
+                button.Size = UDim2.new(1,0,0,25)
+                button.Text = p.Name
+                button.BackgroundColor3 = Color3.fromRGB(70,70,70)
+                button.TextColor3 = Color3.new(1,1,1)
+                button.Font = Enum.Font.SourceSansBold
+                button.TextSize = 14
+                button.Parent = targetDropdown
+
+                table.insert(dropdownConnections, button.MouseButton1Click:Connect(function()
+    targetPlayer = p
+targetInput.Text = p.Name
+targetDropdown.Visible = false
+targetMode = true
+
+targetToggle.Text = "TARGET MODE: ON"
+
+    createNotification(
+        "Target Locked",
+        p.Name
+    )
+end))
+            end
+        end
+    end
+end))
+
+
+    table.insert(connections, targetToggle.MouseButton1Click:Connect(function()
+
+    -- Don't allow target mode without a locked target
+    if not targetMode and not targetPlayer then
+        createNotification("Error", "No targets locked")
+        return
+    end
+
+    targetMode = not targetMode
+
+    targetToggle.Text = targetMode 
+        and "TARGET MODE: ON"
+        or "TARGET MODE: OFF"
+
+end))
+
+
+table.insert(connections, targetInput.FocusLost:Connect(function(enterPressed)
+    if enterPressed then
+        updateTarget()
+    end
+end))
+
+
     table.insert(connections, flingToggle.MouseButton1Click:Connect(function()
     if not scriptUnloaded then
         toggleFling()
@@ -531,9 +831,4 @@ end
 -- ═══════════════════════════════════════════════════════════════
 -- START SCRIPT (Calls Key System First)
 -- ═══════════════════════════════════════════════════════════════
--- Skip key system for mari only
-if player.UserId == 1591715403 then
-    initialize()
-else
-    startKeySystem(initialize)
-end
+startKeySystem(initialize)
