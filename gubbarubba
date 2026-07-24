@@ -475,7 +475,7 @@ end
     versionLabel.Size = UDim2.new(0.8,0,0,15)
     versionLabel.Position = UDim2.new(0.05,0,0,38)
     versionLabel.BackgroundTransparency = 1
-    versionLabel.Text = "v1.1"
+    versionLabel.Text = "v1.2"
     versionLabel.TextColor3 = Color3.fromRGB(0,0,0)
     versionLabel.Font = Enum.Font.SourceSans
     versionLabel.TextSize = 12
