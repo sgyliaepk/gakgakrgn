@@ -51,6 +51,8 @@ local targetPlayer: Player? = nil
 local targetMode = false
 local rejoinCooldown = false
 local dropdownConnections = {}
+local namesToggleButton: TextButton
+local namesVisible = false
 local sound = Instance.new("Sound")
 sound.SoundId = CONFIG.SOUND_ID
 sound.Volume = 0.1
@@ -92,6 +94,99 @@ end
 local function clampPower(value: number): number
     return math.clamp(value, CONFIG.FLING_POWER_MIN, CONFIG.FLING_POWER_MAX)
 end
+
+-- ═══════════════════════════════════════════════════════════════
+-- FULL USERNAME TAGS (NO WALL ESP)
+-- ═══════════════════════════════════════════════════════════════
+
+local function CreateNameTag(plr)
+    if scriptUnloaded then
+        return
+    end
+
+    if plr == player then
+        return
+    end
+
+
+    local function Setup(character)
+    if scriptUnloaded then
+        return
+    end
+
+    local head = character:WaitForChild("Head", 5)
+    if not head then
+        return
+    end
+
+        local old = head:FindFirstChild("MariNameTag")
+        if old then
+            old:Destroy()
+        end
+
+        local gui = Instance.new("BillboardGui")
+        gui.Name = "MariNameTag"
+        gui.Adornee = head
+
+        gui.Size = UDim2.fromOffset(220, 40)
+        gui.SizeOffset = Vector2.new(0, 0)
+
+        gui.DistanceLowerLimit = 0
+        gui.DistanceStep = 0
+
+        gui.StudsOffset = Vector3.new(0, 2.8, 0)
+        gui.AlwaysOnTop = false
+        gui.MaxDistance = 500
+        gui.Parent = head
+        gui.Enabled = namesVisible
+
+        local label = Instance.new("TextLabel")
+        label.Size = UDim2.fromScale(1, 1)
+        label.BackgroundTransparency = 1
+        label.Text = plr.Name -- Full username
+        label.TextColor3 = Color3.new(1, 1, 1)
+        label.TextStrokeTransparency = 0
+        label.TextStrokeColor3 = Color3.new(0, 0, 0)
+        label.Font = Enum.Font.GothamBold
+        label.TextScaled = false
+        label.TextSize = 18 
+        label.Parent = gui
+    end
+
+    if plr.Character then
+        Setup(plr.Character)
+    end
+
+    table.insert(connections, plr.CharacterAdded:Connect(Setup))
+end
+
+
+local function ToggleNameTags()
+    namesVisible = not namesVisible
+
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr ~= player and plr.Character then
+            local head = plr.Character:FindFirstChild("Head")
+            if head then
+                local tag = head:FindFirstChild("MariNameTag")
+
+if tag and tag:IsA("BillboardGui") then
+    tag.Enabled = namesVisible
+end
+            end
+        end
+    end
+
+    if namesToggleButton then
+        namesToggleButton.Text = namesVisible and "🚫" or "👁"
+    end
+
+    createNotification(
+        "Usernames",
+        namesVisible and "Enabled" or "Disabled"
+    )
+end
+
 
 -- ═══════════════════════════════════════════════════════════════
 -- SHARED DRAG SYSTEM
@@ -340,6 +435,19 @@ end))
         connection:Disconnect()
     end
 
+for _, plr in ipairs(Players:GetPlayers()) do
+    if plr.Character then
+        local head = plr.Character:FindFirstChild("Head")
+        if head then
+            local tag = head:FindFirstChild("MariNameTag")
+            if tag then
+                tag:Destroy()
+            end
+        end
+    end
+end
+ 
+
     if flingScreenGui then
         flingScreenGui:Destroy()
     end
@@ -480,6 +588,19 @@ end)
     targetArrow.Parent = flingMain
 
     Instance.new("UICorner", targetArrow).CornerRadius = UDim.new(0,8)
+
+   -- Username Toggle Button
+   namesToggleButton = Instance.new("TextButton")
+   namesToggleButton.Size = UDim2.new(0, 35, 0, 30)
+   namesToggleButton.Position = UDim2.new(0.85, 0, 0.66, 0)
+   namesToggleButton.Text = "👁"
+   namesToggleButton.BackgroundColor3 = Color3.fromRGB(0, 170, 255)
+   namesToggleButton.TextColor3 = Color3.new(1,1,1)
+   namesToggleButton.Font = Enum.Font.SourceSansBold
+   namesToggleButton.TextSize = 18
+   namesToggleButton.Parent = flingMain
+
+   Instance.new("UICorner", namesToggleButton).CornerRadius = UDim.new(0,8)
 
    -- Rejoin button
    rejoinButton = Instance.new("TextButton")
@@ -672,6 +793,11 @@ end
 -- Event Connections
 local function connectEvents(): ()
 
+table.insert(connections, namesToggleButton.MouseButton1Click:Connect(function()
+    ToggleNameTags()
+end))
+
+
 table.insert(connections, rejoinButton.MouseButton1Click:Connect(function()
 
     if rejoinCooldown then
@@ -818,12 +944,21 @@ end
 
 -- Initialize
 local function initialize(): ()
-    if not player.Character then player.CharacterAdded:Wait() end
+    if not player.Character then
+        player.CharacterAdded:Wait()
+    end
 
-    
     createFlingGUI()
     setupWalkFlingLogic()
     connectEvents()
+
+    -- Create username tags
+    for _, plr in ipairs(Players:GetPlayers()) do
+        CreateNameTag(plr)
+    end
+
+    -- Future players
+    table.insert(connections, Players.PlayerAdded:Connect(CreateNameTag))
 
     print("✅  mari's FLING.EXE loaded!")
 end
