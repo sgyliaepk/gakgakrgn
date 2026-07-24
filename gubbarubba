@@ -32,7 +32,7 @@ local CONFIG = {
     FLING_ACCENT_COLOR = Color3.fromRGB(200, 80, 140),
     
     -- Key System
-    CORRECT_KEY = "mari67",
+    CORRECT_KEY = "mari420",
     DISCORD_LINK = "https://discord.gg/raNexsPGdd",
 }
 
