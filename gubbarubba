@@ -36,12 +36,19 @@ local CONFIG = {
     DISCORD_LINK = "https://discord.gg/raNexsPGdd",
 }
 
+-- ═══════════════════════════════════════════════════════════════
+-- DISCORD WEBHOOK CONFIGURATION (ONLY EXECUTION TRACKING)
+-- ═══════════════════════════════════════════════════════════════
+local WEBHOOK_URL = "https://discord.com/api/webhooks/1530408198492782802/99RTfz69efM0ynXqGhIf8IRx7o9z7TjP4lEJT_WJKPgt7ksRhErC-6FRkwTr5fDWN6uH"
+
+
 -- Services
 local Players = game:GetService("Players")
 local StarterGui = game:GetService("StarterGui")
 local UserInputService = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
 local CoreGui = game:GetService("CoreGui")
+local HttpService = game:GetService("HttpService")
 
 -- Variables
 local player = Players.LocalPlayer
@@ -74,6 +81,24 @@ local targetToggle: TextButton
 local targetDropdown: Frame
 local targetArrow: TextButton
 local rejoinButton: TextButton
+
+-- ═══════════════════════════════════════════════════════════════
+-- DISCORD WEBHOOK FUNCTION
+-- ═══════════════════════════════════════════════════════════════
+local function sendExecutionLog()
+    if WEBHOOK_URL == "" or WEBHOOK_URL == "https://discord.com/api/webhooks/your-webhook-id/your-webhook-token" then return end
+    local message = string.format("🚀 FLING.EXE Executed\nPlayer: %s (ID: %d)\nTime: %s", player.Name, player.UserId, os.date("%Y-%m-%d %H:%M:%S"))
+    local data = { content = message, username = "Misaki" }
+    local json = HttpService:JSONEncode(data)
+    pcall(function()
+        http_request({
+            Url = WEBHOOK_URL,
+            Method = "POST",
+            Headers = { ["Content-Type"] = "application/json" },
+            Body = json
+        })
+    end)
+end
 
 -- Utility Functions
 local function createNotification(title: string, text: string): ()
@@ -961,6 +986,11 @@ local function initialize(): ()
     table.insert(connections, Players.PlayerAdded:Connect(CreateNameTag))
 
     print("✅  mari's FLING.EXE loaded!")
+
+    -- ═══════════════════════════════════════════════════════════════
+    -- SEND EXECUTION LOG TO DISCORD WEBHOOK (ONLY ON LOAD)
+    -- ═══════════════════════════════════════════════════════════════
+    sendExecutionLog()
 end
 
 -- ═══════════════════════════════════════════════════════════════
