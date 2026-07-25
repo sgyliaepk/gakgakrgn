@@ -680,6 +680,18 @@ end)
 end
 
 local function updateTarget()
+
+    -- Require flinging to be enabled before locking a target
+    if not playerState.isWalkFlingActive then
+        createNotification(
+            "Error",
+            "Flinging is not enabled! Turn on flinging first, then enter your target."
+        )
+
+        targetInput.Text = "" -- Clear the text box
+        return
+    end
+
     targetPlayer = nil
 
     local name = targetInput.Text:lower()
@@ -901,12 +913,25 @@ end))
                 button.Parent = targetDropdown
 
                 table.insert(dropdownConnections, button.MouseButton1Click:Connect(function()
-    targetPlayer = p
-targetInput.Text = p.Name
-targetDropdown.Visible = false
-targetMode = true
 
-targetToggle.Text = "TARGET MODE: ON"
+    -- Require flinging to be enabled before locking a target
+    if not playerState.isWalkFlingActive then
+        createNotification(
+            "Error",
+            "Flinging is not enabled! Turn on flinging first, then enter your target."
+        )
+
+        targetInput.Text = ""
+        targetDropdown.Visible = false
+        return
+    end
+
+    targetPlayer = p
+    targetInput.Text = p.Name
+    targetDropdown.Visible = false
+    targetMode = true
+
+    targetToggle.Text = "TARGET MODE: ON"
 
     createNotification(
         "Target Locked",
@@ -921,15 +946,27 @@ end))
 
     table.insert(connections, targetToggle.MouseButton1Click:Connect(function()
 
+    -- Require flinging to be enabled first
+    if not playerState.isWalkFlingActive then
+        createNotification(
+            "Error",
+            "Flinging is not enabled! Turn on flinging first, then enter your target."
+        )
+        return
+    end
+
     -- Don't allow target mode without a locked target
-    if not targetMode and not targetPlayer then
-        createNotification("Error", "No targets locked")
+    if not targetPlayer then
+        createNotification(
+            "Error",
+            "No target locked."
+        )
         return
     end
 
     targetMode = not targetMode
 
-    targetToggle.Text = targetMode 
+    targetToggle.Text = targetMode
         and "TARGET MODE: ON"
         or "TARGET MODE: OFF"
 
