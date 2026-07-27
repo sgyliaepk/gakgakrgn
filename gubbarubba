@@ -129,6 +129,7 @@ local namesVisible = false
 local flingConnection = nil
 local antiFlingEnabled = false
 local antiFlingConnection = nil
+local blinkConnection
 local originalCanCollide = {}
 local autoParryConnection
 local connections = {}
@@ -183,6 +184,11 @@ local DangerousAnimations = {
 }
 
 local flingProtectionCooldown = false
+
+--------shadow step-------
+local blinkOn = false
+local blinkCooldown = false
+local blinkDist = 40
 
 
 -----fly input listeners---
@@ -766,6 +772,50 @@ local function startFlingProtection()
     end)
 end
 
+---shadow step logic----
+local function doBlink()
+    if not blinkOn or blinkCooldown then return end
+
+    local character = LocalPlayer.Character
+if not character then return end
+
+local hrp = character:FindFirstChild("HumanoidRootPart")
+    if not hrp then return end
+
+    local cam = workspace.CurrentCamera
+    local look = cam.CFrame.LookVector
+    local dashDir = Vector3.new(look.X, 0, look.Z)
+
+    if dashDir.Magnitude > 0 then
+        dashDir = dashDir.Unit
+    end
+
+    hrp.CFrame = hrp.CFrame + dashDir * blinkDist
+
+    task.spawn(function()
+        local ch = LocalPlayer.Character
+        if not ch then return end
+
+        for _, part in ipairs(ch:GetDescendants()) do
+            if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" then
+                local original = part.Material
+                part.Material = Enum.Material.Neon
+
+                task.delay(0.12, function()
+                    if part and part.Parent then
+                        part.Material = original
+                    end
+                end)
+            end
+        end
+    end)
+
+    blinkCooldown = true
+    task.delay(0.2, function()
+        blinkCooldown = false
+    end)
+end
+
 -- ===== REJOIN =====
 local function rejoinServer()
     if rejoinCooldown then
@@ -1007,6 +1057,15 @@ FlingTab:CreateButton({
     Name = "Unload Hub",
     Callback = function()
     
+---disable shadow step
+blinkOn = false
+
+if blinkConnection then
+    blinkConnection:Disconnect()
+    blinkConnection = nil
+end
+
+
       -- Disable auto parry
 Config.AutoParry.Enabled = false
 
@@ -1134,6 +1193,33 @@ MiscTab:CreateToggle({
         toggleNoclip(v)
     end
 })
+
+MiscTab:CreateToggle({
+     Name = "Enable Shadow step",
+    CurrentValue = false,
+    Callback = function(Value)
+        blinkOn = Value
+    end
+})
+
+MiscTab:CreateSlider({
+    Name = "Shadow step Distance",
+    Range = {10,120},
+    Increment = 1,
+    CurrentValue = 40,
+    Callback = function(Value)
+        blinkDist = Value
+    end
+})
+
+blinkConnection = UserInputService.InputBegan:Connect(function(input, gp)
+    if gp then return end
+
+    if input.KeyCode == Enum.KeyCode.Q then
+        doBlink()
+    end
+end)
+
 
 MiscTab:CreateInput({
     Name = "Spectate Player",
