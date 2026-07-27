@@ -838,7 +838,7 @@ local FlingTab = Window:CreateTab("🚀 Fling", 4483362458)
 
 -- Toggle
 flingToggleRef = FlingTab:CreateToggle({
-    Name = "Enable Fling",
+    Name = "Enable Fling/freeze",
     CurrentValue = false,
     Callback = function(v)
         if v ~= flingActive then
