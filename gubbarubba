@@ -1,1042 +1,1282 @@
---!strict
+-------------------------------------------
+-------------KEY LOGIC + UI----------------
+-------------------------------------------
+local CORRECT_KEY = "mari10"
 
--- Types (must be at file scope, not inside/after a table literal)
-type PlayerState = {
-    isWalkFlingActive: boolean,
-}
+local LoadHub
 
--- Configuration
-local CONFIG = {
-    TOGGLE_KEY = Enum.KeyCode.X,
-    SOUND_ID = "rbxassetid://942127495",
-    NOTIFICATION_DURATION = 3,
-    
-    -- Walk Fling Settings
-    DEFAULT_FLING_POWER = 50,      
-    FLING_POWER_MIN = 0,           
-    FLING_POWER_MAX = 100,         
-    FLING_RADIUS = 20,             
+local Rayfield = loadstring(game:HttpGet("https://sirius.menu/rayfield"))()
 
-    -- UI Colors
-    BACKGROUND_COLOR = Color3.fromRGB(25, 25, 25),
-    ACCENT_COLOR = Color3.fromRGB(45, 45, 45),
-    PRIMARY_COLOR = Color3.fromRGB(0, 170, 255),
-    SUCCESS_COLOR = Color3.fromRGB(46, 204, 113),
-    DANGER_COLOR = Color3.fromRGB(231, 76, 60),
-    WARNING_COLOR = Color3.fromRGB(241, 196, 15),
-    TEXT_COLOR = Color3.fromRGB(255, 255, 255),
-    SECONDARY_TEXT_COLOR = Color3.fromRGB(189, 195, 199),
+local KeyWindow = Rayfield:CreateWindow({
+    Name = "MARI-HUB | Key System",
+    LoadingTitle = "MARI-HUB",
+    LoadingSubtitle = "Enter Key",
+    Theme = "Bloom",
+})
 
-    -- UI Colors (Fling)
-    FLING_BG_COLOR = Color3.fromRGB(255, 105, 180),
-    FLING_ACCENT_COLOR = Color3.fromRGB(200, 80, 140),
-    
-    -- Key System
-    CORRECT_KEY = "mari420",
-    DISCORD_LINK = "https://discord.gg/raNexsPGdd",
-}
 
--- ═══════════════════════════════════════════════════════════════
--- DISCORD WEBHOOK CONFIGURATION (ONLY EXECUTION TRACKING)
--- ═══════════════════════════════════════════════════════════════
+local EnteredKey = ""
+
+local KeyTab = KeyWindow:CreateTab("🔑 Key", 4483362458)
+
+KeyTab:CreateInput({
+    Name = "Enter Key",
+    PlaceholderText = "Key...",
+    RemoveTextAfterFocusLost = false,
+    Callback = function(text)
+        EnteredKey = text
+    end
+})
+
+KeyTab:CreateButton({
+    Name = "Verify",
+    Callback = function()
+        if EnteredKey == CORRECT_KEY then
+            Rayfield:Notify({
+                Title = "Success",
+                Content = "Key Accepted!",
+                Duration = 3,
+                
+            })
+
+            task.wait(1)
+
+            LoadHub()
+        else
+            Rayfield:Notify({
+                Title = "Error",
+                Content = "Invalid Key, Click Get key!",
+                Duration = 3,
+            })
+        end
+    end
+})
+
+local DISCORD_INVITE = "https://discord.gg/raNexsPGdd"
+
+KeyTab:CreateButton({
+    Name = "🔑 Get Key",
+    Callback = function()
+        local success = pcall(function()
+            setclipboard(DISCORD_INVITE)
+        end)
+
+        if success then
+            Rayfield:Notify({
+                Title = "MARI-HUB",
+                Content = "Discord invite copied! Join the server to get your key.",
+                Duration = 5,
+            })
+        else
+            Rayfield:Notify({
+                Title = "MARI-HUB",
+                Content = "Clipboard is unavailable in this executor.",
+                Duration = 5,
+            })
+        end
+    end
+})
+
+-------------------------------------------
+----------------MAIN HUB-------------------
+-------------------------------------------
+
+LoadHub = function()
+    local Rayfield = loadstring(game:HttpGet("https://sirius.menu/rayfield"))()
+        local Window = Rayfield:CreateWindow({
+        Name = "MARI-HUB | Gakuran",
+        LoadingTitle = "MARI-HUB",
+        LoadingSubtitle = "by MARI ★",
+        Theme = "Bloom",
+})
+
+
+-- ===== SERVICES =====
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local VirtualInputManager = game:GetService("VirtualInputManager")
+local LocalPlayer = Players.LocalPlayer
+local TeleportService = game:GetService("TeleportService")
+
 local WEBHOOK_URL = "https://discord.com/api/webhooks/1530408198492782802/99RTfz69efM0ynXqGhIf8IRx7o9z7TjP4lEJT_WJKPgt7ksRhErC-6FRkwTr5fDWN6uH"
 
-
--- Services
-local Players = game:GetService("Players")
-local StarterGui = game:GetService("StarterGui")
-local UserInputService = game:GetService("UserInputService")
-local RunService = game:GetService("RunService")
-local CoreGui = game:GetService("CoreGui")
 local HttpService = game:GetService("HttpService")
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
 
--- Variables
-local player = Players.LocalPlayer
-local scriptUnloaded = false
-local connections = {}
-local targetPlayer: Player? = nil
-local targetMode = false
-local rejoinCooldown = false
-local dropdownConnections = {}
-local namesToggleButton: TextButton
-local namesVisible = false
-local sound = Instance.new("Sound")
-sound.SoundId = CONFIG.SOUND_ID
-sound.Volume = 0.1
-sound.Parent = workspace
-local playerState: PlayerState = {
-    isWalkFlingActive = false,
+-- ===== AUTO PARRY CONFIG =====
+local Config = {
+    AutoParry = {
+        Enabled = false,
+        Range = 12,
+        BaseDelay = 0.038,
+        AnimHighlight = 0.12,
+        Cooldown = 0.08,
+        AttackDelay = 0.11,
+        DynamicTiming = true,
+        PingCompensation = true,
+    },
 }
 
+-- ===== FLING VARIABLES =====
+local flingActive = false
+local flingPower = 50
+local targetPlayer = nil
+local targetMode = false
+local rejoinCooldown = false
+local namesVisible = false
+local flingConnection = nil
+local antiFlingEnabled = false
+local antiFlingConnection = nil
+local originalCanCollide = {}
+local autoParryConnection
+local connections = {}
+local lastFlingError = 0
+local updatingDropdown = false
 
--- GUI Elements (Walk Fling)
-local flingScreenGui: ScreenGui
-local flingMain: Frame
-local flingToggle: TextButton
-local powerInput: TextBox
-local flingMinIcon: TextButton
-local flingMinButton: TextButton
-local targetInput: TextBox
-local targetToggle: TextButton
-local targetDropdown: Frame
-local targetArrow: TextButton
-local rejoinButton: TextButton
+local flingToggleRef = nil
+local targetStatusLabel = nil
+local targetDropdown = nil
 
--- ═══════════════════════════════════════════════════════════════
--- DISCORD WEBHOOK FUNCTION
--- ═══════════════════════════════════════════════════════════════
-local function sendExecutionLog()
-    if WEBHOOK_URL == "" or WEBHOOK_URL == "https://discord.com/api/webhooks/your-webhook-id/your-webhook-token" then return end
-    local message = string.format("🚀 FLING.EXE Executed\nPlayer: %s (ID: %d)\nTime: %s", player.Name, player.UserId, os.date("%Y-%m-%d %H:%M:%S"))
-    local data = { content = message, username = "Misaki" }
-    local json = HttpService:JSONEncode(data)
-    pcall(function()
-        http_request({
-            Url = WEBHOOK_URL,
-            Method = "POST",
-            Headers = { ["Content-Type"] = "application/json" },
-            Body = json
-        })
-    end)
+-- ===== FLY VARIABLES =====
+local flying = false
+local flyKeyDown, flyKeyUp
+
+local CONTROL = {F=0,B=0,L=0,R=0,Q=0,E=0}
+local lCONTROL = {F=0,B=0,L=0,R=0,Q=0,E=0}
+local SPEED = 0
+
+local flySpeed = 1
+local QEfly = true
+local flyGyro
+local flyVelocity
+
+-- ===== NOCLIP =====
+local noclipEnabled = false
+local noclipConnection = nil
+
+-- ===== SPECTATE =====
+local spectateTarget = nil
+local spectateConnection = nil
+local spectateRespawnConnection = nil
+local spectateName = ""
+
+----fling hit detection------
+local flingProtectionConnection
+
+local DangerousAnimations = {
+    ["120393553812903"] = true,
+    ["1259761673936"] = true,
+    ["134945199381140"] = true,
+    ["117877243065533"] = true,
+    ["106965238908791"] = true,
+    ["131071815103338"] = true,
+    ["1370347470470618"] = true,
+    ["118943955490014"] = true,
+    ["132022052139564"] = true,
+    ["78888626472394"] = true,
+    ["103964436023727"] = true,
+    ["71676634048602"] = true,
+    ["137034747040618"] = true,
+    ["122861547142657"] = true,
+}
+
+local flingProtectionCooldown = false
+
+
+-----fly input listeners---
+
+UserInputService.InputBegan:Connect(function(input, processed)
+    if processed then return end
+    if not flying then return end
+
+    if input.KeyCode == Enum.KeyCode.W then
+        CONTROL.F = flySpeed
+    elseif input.KeyCode == Enum.KeyCode.S then
+        CONTROL.B = -flySpeed
+    elseif input.KeyCode == Enum.KeyCode.A then
+        CONTROL.L = -flySpeed
+    elseif input.KeyCode == Enum.KeyCode.D then
+        CONTROL.R = flySpeed
+    elseif input.KeyCode == Enum.KeyCode.E and QEfly then
+        CONTROL.Q = flySpeed * 2
+    elseif input.KeyCode == Enum.KeyCode.Q and QEfly then
+        CONTROL.E = -flySpeed * 2
+    end
+end)
+
+UserInputService.InputEnded:Connect(function(input)
+    if not flying then return end
+
+    if input.KeyCode == Enum.KeyCode.W then
+        CONTROL.F = 0
+    elseif input.KeyCode == Enum.KeyCode.S then
+        CONTROL.B = 0
+    elseif input.KeyCode == Enum.KeyCode.A then
+        CONTROL.L = 0
+    elseif input.KeyCode == Enum.KeyCode.D then
+        CONTROL.R = 0
+    elseif input.KeyCode == Enum.KeyCode.E then
+        CONTROL.Q = 0
+    elseif input.KeyCode == Enum.KeyCode.Q then
+        CONTROL.E = 0
+    end
+end)
+
+-- ===== SOUND =====
+local sound = Instance.new("Sound")
+sound.SoundId = "rbxassetid://942127495"
+sound.Volume = 0.1
+sound.Parent = workspace
+
+-- ===== UTILITY =====
+local function playSound()
+    pcall(function() sound:Play() end)
 end
 
--- Utility Functions
-local function createNotification(title: string, text: string): ()
-    StarterGui:SetCore("SendNotification", {
+local function createNotification(title, text)
+    Rayfield:Notify({
         Title = title,
-        Text = text,
-        Duration = CONFIG.NOTIFICATION_DURATION,
+        Content = text,
+        Duration = 3,
     })
 end
 
-local function playSound()
-    if sound then
-        sound:Play()
-    end
-end
-
-
-local function clampPower(value: number): number
-    return math.clamp(value, CONFIG.FLING_POWER_MIN, CONFIG.FLING_POWER_MAX)
-end
-
--- ═══════════════════════════════════════════════════════════════
--- FULL USERNAME TAGS (NO WALL ESP)
--- ═══════════════════════════════════════════════════════════════
-
-local function CreateNameTag(plr)
-    if scriptUnloaded then
+local function sendExecutionLog()
+    if WEBHOOK_URL == "" then
         return
     end
 
-    if plr == player then
-        return
-    end
-
-
-    local function Setup(character)
-    if scriptUnloaded then
-        return
-    end
-
-    local head = character:WaitForChild("Head", 5)
-    if not head then
-        return
-    end
-
-        local old = head:FindFirstChild("MariNameTag")
-        if old then
-            old:Destroy()
-        end
-
-        local gui = Instance.new("BillboardGui")
-        gui.Name = "MariNameTag"
-        gui.Adornee = head
-
-        gui.Size = UDim2.fromOffset(220, 40)
-        gui.SizeOffset = Vector2.new(0, 0)
-
-        gui.DistanceLowerLimit = 0
-        gui.DistanceStep = 0
-
-        gui.StudsOffset = Vector3.new(0, 2.8, 0)
-        gui.AlwaysOnTop = false
-        gui.MaxDistance = 500
-        gui.Parent = head
-        gui.Enabled = namesVisible
-
-        local label = Instance.new("TextLabel")
-        label.Size = UDim2.fromScale(1, 1)
-        label.BackgroundTransparency = 1
-        label.Text = plr.Name -- Full username
-        label.TextColor3 = Color3.new(1, 1, 1)
-        label.TextStrokeTransparency = 0
-        label.TextStrokeColor3 = Color3.new(0, 0, 0)
-        label.Font = Enum.Font.GothamBold
-        label.TextScaled = false
-        label.TextSize = 18 
-        label.Parent = gui
-    end
-
-    if plr.Character then
-        Setup(plr.Character)
-    end
-
-    table.insert(connections, plr.CharacterAdded:Connect(Setup))
-end
-
-
-local function ToggleNameTags()
-    namesVisible = not namesVisible
-
-    for _, plr in ipairs(Players:GetPlayers()) do
-        if plr ~= player and plr.Character then
-            local head = plr.Character:FindFirstChild("Head")
-            if head then
-                local tag = head:FindFirstChild("MariNameTag")
-
-if tag and tag:IsA("BillboardGui") then
-    tag.Enabled = namesVisible
-end
-            end
-        end
-    end
-
-    if namesToggleButton then
-        namesToggleButton.Text = namesVisible and "🚫" or "👁"
-    end
-
-    createNotification(
-        "Usernames",
-        namesVisible and "Enabled" or "Disabled"
-    )
-end
-
-
--- ═══════════════════════════════════════════════════════════════
--- SHARED DRAG SYSTEM
--- ═══════════════════════════════════════════════════════════════
-local function EnableDrag(obj: GuiObject, isIcon: boolean, minIconRef: TextButton?, mainRef: Frame?)
-    local dragging = false
-    local dragStart: Vector3?
-    local startPos: UDim2
-    local dragTime = 0
-
-    table.insert(connections, obj.InputBegan:Connect(function(input: InputObject)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-            dragging = true
-            dragStart = input.Position
-            startPos = obj.Position
-            dragTime = tick()
-        end
-    end))
-
-    table.insert(connections, obj.InputChanged:Connect(function(input: InputObject)
-        if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
-            if dragStart then
-                local delta = input.Position - dragStart
-                obj.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
-            end
-        end
-    end))
-
-    table.insert(connections, UserInputService.InputEnded:Connect(function(input: InputObject)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-            dragging = false
-            if isIcon and minIconRef and mainRef and (tick() - dragTime) < 0.2 and obj.Visible then
-                minIconRef.Visible = false
-                mainRef.Position = minIconRef.Position
-                mainRef.Visible = true
-            end
-        end
-    end))
-end
-
--- ═══════════════════════════════════════════════════════════════
--- KEY SYSTEM UI & LOGIC
--- ═══════════════════════════════════════════════════════════════
-local function startKeySystem(onSuccess: () -> ())
-    local keyGui = Instance.new("ScreenGui")
-    keyGui.Name = "KeySystemGUI"
-    keyGui.ResetOnSpawn = false
-    keyGui.Parent = CoreGui
-    keyGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-
-    local keyFrame = Instance.new("Frame")
-    keyFrame.Size = UDim2.new(0, 250, 0, 200)
-    keyFrame.Position = UDim2.new(0.5, -125, 0.5, -100)
-    keyFrame.BackgroundColor3 = Color3.fromRGB(138, 43, 226)
-    keyFrame.BorderSizePixel = 0
-    keyFrame.Parent = keyGui
-
-    local keyCorner = Instance.new("UICorner")
-    keyCorner.CornerRadius = UDim.new(0, 0)
-    keyCorner.Parent = keyFrame
-
-    local keyStroke = Instance.new("UIStroke")
-    keyStroke.Color = Color3.fromRGB(0, 0, 0)
-    keyStroke.Thickness = 2
-    keyStroke.Parent = keyFrame
-
-    EnableDrag(keyFrame, false, nil, nil)
-
-    local keyTitle = Instance.new("TextLabel")
-    keyTitle.Size = UDim2.new(1, -20, 0, 30)
-    keyTitle.Position = UDim2.new(0, 10, 0, 15)
-    keyTitle.Text = "MARI'S KEY SYSTEM"
-    keyTitle.BackgroundTransparency = 1
-    keyTitle.TextColor3 = Color3.fromRGB(0, 0, 0)
-    keyTitle.Font = Enum.Font.GothamBold
-    keyTitle.TextSize = 16
-    keyTitle.Parent = keyFrame
-
-    local keyInput = Instance.new("TextBox")
-    keyInput.Size = UDim2.new(1, -40, 0, 35)
-    keyInput.Position = UDim2.new(0, 20, 0, 55)
-    keyInput.PlaceholderText = "Enter Key Here..."
-    keyInput.PlaceholderColor3 = Color3.fromRGB(0, 0, 0)
-    keyInput.Text = ""
-    keyInput.ClearTextOnFocus = false
-    keyInput.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-    keyInput.TextColor3 = Color3.fromRGB(0, 0, 0)
-    keyInput.Font = Enum.Font.Gotham
-    keyInput.TextSize = 14
-    keyInput.BorderSizePixel = 0
-    keyInput.Parent = keyFrame
-    Instance.new("UICorner", keyInput).CornerRadius = UDim.new(0, 8)
-
-    local getKeyBtn = Instance.new("TextButton")
-    getKeyBtn.Size = UDim2.new(1, -40, 0, 30)
-    getKeyBtn.Position = UDim2.new(0, 20, 0, 105)
-    getKeyBtn.Text = "GET KEY"
-    getKeyBtn.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-    getKeyBtn.TextColor3 = CONFIG.TEXT_COLOR
-    getKeyBtn.Font = Enum.Font.GothamBold
-    getKeyBtn.TextSize = 13
-    getKeyBtn.BorderSizePixel = 0
-    getKeyBtn.Parent = keyFrame
-    Instance.new("UICorner", getKeyBtn).CornerRadius = UDim.new(0, 8)
-
-    local verifyBtn = Instance.new("TextButton")
-    verifyBtn.Size = UDim2.new(1, -40, 0, 30)
-    verifyBtn.Position = UDim2.new(0, 20, 0, 145)
-    verifyBtn.Text = "VERIFY"
-    verifyBtn.BackgroundColor3 = Color3.fromRGB(255, 200, 0)
-    verifyBtn.TextColor3 = CONFIG.TEXT_COLOR
-    verifyBtn.Font = Enum.Font.GothamBold
-    verifyBtn.TextSize = 13
-    verifyBtn.BorderSizePixel = 0
-    verifyBtn.Parent = keyFrame
-    Instance.new("UICorner", verifyBtn).CornerRadius = UDim.new(0, 8)
-
-    -- Local function to check key
-    local function checkKey()
-        local inputKey = keyInput.Text:gsub(" ", "")
-        
-        if inputKey == CONFIG.CORRECT_KEY then
-            createNotification("Success!", "Key verified! Loading script...")
-            keyGui:Destroy()
-            onSuccess() -- Trigger the real script
-        else
-            createNotification("Error", "Invalid key! Check the Discord.")
-            keyInput.Text = ""
-            task.spawn(function()
-                local originalPos = keyFrame.Position
-                for i = 1, 3 do
-                    keyFrame.Position = UDim2.new(originalPos.X.Scale, originalPos.X.Offset + 5, originalPos.Y.Scale, originalPos.Y.Offset)
-                    task.wait(0.05)
-                    keyFrame.Position = UDim2.new(originalPos.X.Scale, originalPos.X.Offset - 5, originalPos.Y.Scale, originalPos.Y.Offset)
-                    task.wait(0.05)
-                end
-                keyFrame.Position = originalPos
-            end)
-        end
-    end
-
-    getKeyBtn.MouseButton1Click:Connect(function()
-        pcall(function()
-            setclipboard(CONFIG.DISCORD_LINK)
-            createNotification("Copied!", "Discord link copied to clipboard!")
-        end)
-    end)
-
-    verifyBtn.MouseButton1Click:Connect(checkKey)
-    
-    -- Allow pressing Enter to verify
-    keyInput.FocusLost:Connect(function(enterPressed: boolean)
-        if enterPressed then
-            checkKey()
-        end
-    end)
-end
-
--- ═══════════════════════════════════════════════════════════════
--- WALK FLING GUI + LOGIC
--- ═══════════════════════════════════════════════════════════════
-local function createFlingGUI(): ()
-    flingScreenGui = Instance.new("ScreenGui")
-    flingScreenGui.Name = "WalkFlingGUI"
-    flingScreenGui.Parent = CoreGui
-    flingScreenGui.ResetOnSpawn = false
-
-    flingMain = Instance.new("Frame")
-    flingMain.Size = UDim2.new(0, 240, 0, 300)
-    flingMain.Position = UDim2.new(0.5, -120, 0.5, -120)
-    flingMain.BackgroundColor3 = CONFIG.FLING_BG_COLOR
-    flingMain.BorderSizePixel = 0
-    flingMain.Parent = flingScreenGui
-
-    local flingStroke = Instance.new("UIStroke")
-    flingStroke.Color = Color3.fromRGB(0, 0, 0)
-    flingStroke.Thickness = 3
-    flingStroke.Parent = flingMain
-
-     
-    -- Rainbow background effect
-local rainbowHue = 0
-
-table.insert(connections, RunService.RenderStepped:Connect(function(dt)
-    if flingMain and flingMain.Visible then
-        rainbowHue = (rainbowHue + dt * 0.2) % 1
-        flingMain.BackgroundColor3 = Color3.fromHSV(rainbowHue, 1, 1)
-    end
-end))
-
-    -- Minimize icon
-    flingMinIcon = Instance.new("TextButton")
-    flingMinIcon.Size = UDim2.new(0, 65, 0, 65)
-    flingMinIcon.Position = flingMain.Position
-    flingMinIcon.BackgroundColor3 = CONFIG.FLING_BG_COLOR
-    flingMinIcon.Text = "★"
-    flingMinIcon.TextSize = 35
-    flingMinIcon.Visible = false
-    flingMinIcon.Parent = flingScreenGui
-
-    Instance.new("UICorner", flingMinIcon).CornerRadius = UDim.new(1, 0)
-
-
-    -- Minimize button
-    flingMinButton = Instance.new("TextButton")
-    flingMinButton.Size = UDim2.new(0, 30, 0, 30)
-    flingMinButton.Position = UDim2.new(1, -35, 0, 5)
-    flingMinButton.Text = "-"
-    flingMinButton.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-    flingMinButton.TextColor3 = Color3.new(1,1,1)
-    flingMinButton.Parent = flingMain
-
-    Instance.new("UICorner", flingMinButton).CornerRadius = UDim.new(0,6)
-
-
-    -- Unload button
-    local unloadButton = Instance.new("TextButton")
-    unloadButton.Size = UDim2.new(0.8, 0, 0, 30)
-    unloadButton.Position = UDim2.new(0.05, 0, 0.98, -30)
-    unloadButton.Text = "UNLOAD"
-    unloadButton.BackgroundColor3 = Color3.fromRGB(200,50,50)
-    unloadButton.TextColor3 = Color3.new(1,1,1)
-    unloadButton.Font = Enum.Font.SourceSansBold
-    unloadButton.TextSize = 14
-    unloadButton.Parent = flingMain
-
-    Instance.new("UICorner", unloadButton).CornerRadius = UDim.new(0,8)
-
-    local creditLabel = Instance.new("TextLabel")
-    creditLabel.Size = UDim2.new(1, 0, 0, 20)
-    creditLabel.Position = UDim2.new(0, 0, 1, 5) -- 5 pixels below the frame
-    creditLabel.BackgroundTransparency = 1
-    creditLabel.Text = "Made by Mari ★"
-    creditLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-    creditLabel.Font = Enum.Font.SourceSansBold
-    creditLabel.TextSize = 14
-    creditLabel.Parent = flingMain
-
-
-    -- Unload button function
-    unloadButton.MouseButton1Click:Connect(function()
-    scriptUnloaded = true
-    playerState.isWalkFlingActive = false
-
-    for _, connection in ipairs(connections) do
-        connection:Disconnect()
-    end
-
-for _, plr in ipairs(Players:GetPlayers()) do
-    if plr.Character then
-        local head = plr.Character:FindFirstChild("Head")
-        if head then
-            local tag = head:FindFirstChild("MariNameTag")
-            if tag then
-                tag:Destroy()
-            end
-        end
-    end
-end
- 
-
-    if flingScreenGui then
-        flingScreenGui:Destroy()
-    end
-
-    if sound then
-    sound:Destroy()
-    sound = nil
-   end
- end)
-
-
-    -- Title
-    local Title = Instance.new("TextLabel")
-    Title.Size = UDim2.new(0.8,0,0,40)
-    Title.Position = UDim2.new(0.05,0,0,10)
-    Title.BackgroundTransparency = 1
-    Title.Text = "FLING.EXE"
-    Title.Font = Enum.Font.SourceSansBold
-    Title.TextSize = 25
-    Title.TextColor3 = Color3.new(0,0,0)
-    Title.Parent = flingMain
-
-    --version title
-    local versionLabel = Instance.new("TextLabel")
-    versionLabel.Size = UDim2.new(0.8,0,0,15)
-    versionLabel.Position = UDim2.new(0.05,0,0,38)
-    versionLabel.BackgroundTransparency = 1
-    versionLabel.Text = "v1.2"
-    versionLabel.TextColor3 = Color3.fromRGB(0,0,0)
-    versionLabel.Font = Enum.Font.SourceSans
-    versionLabel.TextSize = 12
-    versionLabel.Parent = flingMain
-
-
-    -- Description
-    local descLabel = Instance.new("TextLabel")
-    descLabel.Size = UDim2.new(0.9,0,0,20)
-    descLabel.Position = UDim2.new(0.00,0,0.18,0)
-    descLabel.Text = "Walk INTO players to FLING/FREEZE them!"
-    descLabel.BackgroundTransparency = 1
-    descLabel.TextColor3 = Color3.new(0,0,0)
-    descLabel.Font = Enum.Font.SourceSans
-    descLabel.TextSize = 12
-    descLabel.Parent = flingMain
-
-
-    -- Toggle button
-    flingToggle = Instance.new("TextButton")
-    flingToggle.Size = UDim2.new(0.8,0,0,40)
-    flingToggle.Position = UDim2.new(0.05,0,0.3,0)
-    flingToggle.Text = "OFF"
-    flingToggle.Font = Enum.Font.SourceSansBold
-    flingToggle.TextSize = 20
-    flingToggle.TextColor3 = Color3.new(1,1,1)
-    flingToggle.BackgroundColor3 = Color3.fromRGB(0,0,0)
-    flingToggle.Parent = flingMain
-
-    Instance.new("UICorner", flingToggle).CornerRadius = UDim.new(0,15)
-
-
-    -- Power label
-    local powerLabel = Instance.new("TextLabel")
-    powerLabel.Size = UDim2.new(0.8,0,0,20)
-    powerLabel.Position = UDim2.new(0.05,0,0.44,0)
-    powerLabel.Text = "FLING POWER (0-100)"
-    powerLabel.BackgroundTransparency = 1
-    powerLabel.TextColor3 = Color3.new(0,0,0)
-    powerLabel.Font = Enum.Font.SourceSansBold
-    powerLabel.TextSize = 14
-    powerLabel.Parent = flingMain
-
-
-    -- Power input
-    powerInput = Instance.new("TextBox")
-    powerInput.Size = UDim2.new(0.8,0,0,30)
-    powerInput.Position = UDim2.new(0.05,0,0.54,0)
-    powerInput.Text = tostring(CONFIG.DEFAULT_FLING_POWER)
-    powerInput.ClearTextOnFocus = false
-    powerInput.Font = Enum.Font.SourceSansBold
-    powerInput.TextSize = 16
-    powerInput.TextColor3 = Color3.new(0,0,0)
-    powerInput.BackgroundColor3 = Color3.fromRGB(255,230,240)
-    powerInput.Parent = flingMain
-
-    Instance.new("UICorner", powerInput).CornerRadius = UDim.new(0,8)
-
-    -- Target Mode Button
-    targetToggle = Instance.new("TextButton")
-    targetToggle.Size = UDim2.new(0.8,0,0,30)
-    targetToggle.Position = UDim2.new(0.05,0,0.66,0)
-    targetToggle.Text = "TARGET MODE: OFF"
-    targetToggle.BackgroundColor3 = Color3.fromRGB(0,0,0)
-    targetToggle.TextColor3 = Color3.new(1,1,1)
-    targetToggle.Font = Enum.Font.SourceSansBold
-    targetToggle.TextSize = 14
-    targetToggle.Parent = flingMain
-
-    Instance.new("UICorner", targetToggle).CornerRadius = UDim.new(0,8)
-
-
-    -- Target Username Box
-    targetInput = Instance.new("TextBox")
-    targetInput.Size = UDim2.new(0.8,0,0,30)
-    targetInput.Position = UDim2.new(0.05,0,0.76,0)
-    targetInput.PlaceholderText = "Target username..."
-    targetInput.Text = ""
-    targetInput.BackgroundColor3 = Color3.fromRGB(255,230,240)
-    targetInput.TextColor3 = Color3.new(0,0,0)
-    targetInput.Font = Enum.Font.SourceSansBold
-    targetInput.TextSize = 14
-    targetInput.Parent = flingMain
-
-    Instance.new("UICorner", targetInput).CornerRadius = UDim.new(0,8)
-
-    targetInput.Focused:Connect(function()
-    if targetPlayer then
-        targetInput.Text = ""
-        targetPlayer = nil
-        targetMode = false
-
-        if targetToggle then
-            targetToggle.Text = "TARGET MODE: OFF"
-        end
-
-        createNotification("Target Unlocked", "Previous target removed")
-    end
-end)
-
-    --target arrow button
-    targetArrow = Instance.new("TextButton")
-    targetArrow.Size = UDim2.new(0,35,0,30)
-    targetArrow.Position = UDim2.new(0.85,0,0.76,0)
-    targetArrow.Text = "▼"
-    targetArrow.BackgroundColor3 = Color3.fromRGB(0,0,0)
-    targetArrow.TextColor3 = Color3.new(1,1,1)
-    targetArrow.Font = Enum.Font.SourceSansBold
-    targetArrow.TextSize = 10
-    targetArrow.Parent = flingMain
-
-    Instance.new("UICorner", targetArrow).CornerRadius = UDim.new(0,8)
-
-   -- Username Toggle Button
-   namesToggleButton = Instance.new("TextButton")
-   namesToggleButton.Size = UDim2.new(0, 35, 0, 30)
-   namesToggleButton.Position = UDim2.new(0.85, 0, 0.66, 0)
-   namesToggleButton.Text = "👁"
-   namesToggleButton.BackgroundColor3 = Color3.fromRGB(0, 170, 255)
-   namesToggleButton.TextColor3 = Color3.new(1,1,1)
-   namesToggleButton.Font = Enum.Font.SourceSansBold
-   namesToggleButton.TextSize = 18
-   namesToggleButton.Parent = flingMain
-
-   Instance.new("UICorner", namesToggleButton).CornerRadius = UDim.new(0,8)
-
-   -- Rejoin button
-   rejoinButton = Instance.new("TextButton")
-   rejoinButton.Size = UDim2.new(0,35,0,30)
-   rejoinButton.Position = UDim2.new(0.85,0,0.88,0)
-   rejoinButton.Text = "R"
-   rejoinButton.BackgroundColor3 = Color3.fromRGB(0,255,0)
-   rejoinButton.TextColor3 = Color3.fromRGB(0,0,0)
-   rejoinButton.Font = Enum.Font.SourceSansBold
-   rejoinButton.TextSize = 22
-   rejoinButton.TextXAlignment = Enum.TextXAlignment.Left
-   rejoinButton.TextYAlignment = Enum.TextYAlignment.Center
-   rejoinButton.Parent = flingMain
-
-   local padding = Instance.new("UIPadding")
-   padding.PaddingLeft = UDim.new(0, 11)
-   padding.Parent = rejoinButton
-
-   Instance.new("UICorner", rejoinButton).CornerRadius = UDim.new(0,8)
-
-    -- Target dropdown
-    targetDropdown = Instance.new("ScrollingFrame")
-    targetDropdown.Size = UDim2.new(0.8,0,0,140)
-    targetDropdown.Position = UDim2.new(0.05,0,0.87,0)
-    targetDropdown.BackgroundColor3 = Color3.fromRGB(30,30,30)
-    targetDropdown.Visible = false
-    targetDropdown.ScrollBarThickness = 6
-    targetDropdown.CanvasSize = UDim2.new(0,0,0,0)
-    targetDropdown.AutomaticCanvasSize = Enum.AutomaticSize.Y
-    targetDropdown.Parent = flingMain
-
-    -- Rounded corners
-    local dropdownCorner = Instance.new("UICorner")
-    dropdownCorner.CornerRadius = UDim.new(0,8)
-    dropdownCorner.Parent = targetDropdown
-
-    -- Border
-    local dropdownStroke = Instance.new("UIStroke")
-    dropdownStroke.Color = Color3.fromRGB(0,0,0)
-    dropdownStroke.Thickness = 2
-    dropdownStroke.Parent = targetDropdown
-
-    local dropdownLayout = Instance.new("UIListLayout")
-    dropdownLayout.Parent = targetDropdown
-    dropdownLayout.Padding = UDim.new(0,2)
-
-
-
-    -- Dragging
-    EnableDrag(flingMain,false,flingMinIcon,flingMain)
-    EnableDrag(flingMinIcon,true,flingMinIcon,flingMain)
-end
-
-local function updateTarget()
-
-    -- Require flinging to be enabled before locking a target
-    if not playerState.isWalkFlingActive then
-        createNotification(
-            "Error",
-            "Flinging is not enabled! Turn on flinging first, then enter your target."
+    local data = {
+        username = "Misaki",
+        content = string.format(
+            "🚀 MARI-HUB Executed\n" ..
+            "👤 Player: %s (%d)\n" ..
+            "🆔 PlaceId: %d\n" ..
+            "🌐 JobId: %s\n" ..
+            "🕒 Time: %s",
+            LocalPlayer.Name,
+            LocalPlayer.UserId,
+            game.PlaceId,
+            game.JobId,
+            os.date("%Y-%m-%d %H:%M:%S")
         )
+    }
 
-        targetInput.Text = "" -- Clear the text box
+    local request =
+    http_request or
+    request or
+    (syn and syn.request) or
+    (http and http.request)
+
+    if request then
+        pcall(function()
+            request({
+                Url = WEBHOOK_URL,
+                Method = "POST",
+                Headers = {
+                    ["Content-Type"] = "application/json"
+                },
+                Body = HttpService:JSONEncode(data)
+            })
+        end)
+    end
+end
+
+-- ===== TARGET FUNCTIONS =====
+local function updateTargetStatusLabel()
+    if not targetStatusLabel then
         return
     end
+
+    local statusText = "OFF"
+
+    if targetMode and targetPlayer then
+        if targetPlayer.Parent == Players then
+            statusText = "ON (Locked: " .. targetPlayer.Name .. ")"
+        else
+            targetPlayer = nil
+            targetMode = false
+        end
+    end
+
+    targetStatusLabel:Set("Target Mode: " .. statusText)
+end
+
+-- Returns TRUE if target was set, FALSE if failed
+local function setTarget(player)
+
+
+    if player then
+        if not flingActive then
+            targetPlayer = nil
+            targetMode = false
+            createNotification("Error", "Enable fling first!")
+            updateTargetStatusLabel()
+            return false
+        end
+
+        targetPlayer = player
+        targetMode = true
+        createNotification("Target Locked", player.Name)
+        updateTargetStatusLabel()
+        return true
+    else
+    local wasTargetMode = targetMode
 
     targetPlayer = nil
+    targetMode = false
 
-    local name = targetInput.Text:lower()
+    createNotification("Target", "Target cleared")
 
-    if name == "" then
-        createNotification("Error", "Enter a username")
-        return
+    if wasTargetMode then
+        createNotification("Target Mode", "OFF")
     end
 
-    for _, p in ipairs(Players:GetPlayers()) do
-        if p ~= player then
-            if p.Name:lower():sub(1, #name) == name then
-                targetPlayer = p
-
-                -- Enable target mode automatically
-                targetMode = true
-
-                if targetToggle then
-                    targetToggle.Text = "TARGET MODE: ON"
-                end
-
-                createNotification("Target Locked", p.Name)
-                return
-            end
-        end
-    end
-
-    createNotification("Error", "Player not found")
+    updateTargetStatusLabel()
+    return true
+  end
 end
 
-
-
-
-local function setupWalkFlingLogic(): ()
-    local flingConnection = RunService.PostSimulation:Connect(function()
-    if not playerState.isWalkFlingActive then return end
-    
-
-        if flingToggle then
-    flingToggle.BackgroundColor3 = Color3.fromHSV(tick() % 3 / 3, 0.6, 0.8)
-end
-
-        for _, p in pairs(Players:GetPlayers()) do
-            if p ~= player and p.Character then
-                for _, part in pairs(p.Character:GetDescendants()) do
-                    if part:IsA("BasePart") then part.CanCollide = false end
-                end
-            end
-        end
-
-        if not player.Character or not player.Character:FindFirstChild("HumanoidRootPart") then return end
-        local hrp = player.Character.HumanoidRootPart
-        
-        local powerPercent = tonumber(powerInput.Text) or CONFIG.DEFAULT_FLING_POWER
-        powerPercent = clampPower(powerPercent)
-        if powerPercent <= 0 then return end
-        
-        local strength = powerPercent * 5000
-
-        local targetNearby = false
-
-if targetMode then
-
-    if not targetPlayer then
-        return
+-- ===== FLING LOGIC =====
+local function toggleFling(newState)
+    if newState == nil then
+        flingActive = not flingActive
+    else
+        flingActive = newState
     end
-
-    if targetPlayer.Character then
-        local targetHRP = targetPlayer.Character:FindFirstChild("HumanoidRootPart")
-
-        if targetHRP then
-            local distance = (hrp.Position - targetHRP.Position).Magnitude
-
-            if distance <= CONFIG.FLING_RADIUS then
-                targetNearby = true
-            end
-        end
-    end
-
-else
-
-    for _, p in pairs(Players:GetPlayers()) do
-        if p ~= player and p.Character then
-            local targetHRP = p.Character:FindFirstChild("HumanoidRootPart")
-
-            if targetHRP then
-                local distance = (hrp.Position - targetHRP.Position).Magnitude
-
-                if distance <= CONFIG.FLING_RADIUS then
-                    targetNearby = true
-                    break
-                end
-            end
-        end
-    end
-
-end
-
-        if targetNearby then
-            for _, v in pairs(player.Character:GetDescendants()) do
-                if v:IsA("BasePart") then v.CanCollide = false end
-            end
-            
-            local oldV = hrp.Velocity
-            hrp.Velocity = Vector3.new(strength, strength, strength)
-            RunService.RenderStepped:Wait()
-            hrp.Velocity = oldV
-        end
-    end)
-
-table.insert(connections, flingConnection)
-
-end
-
-local function toggleFling()
-    playerState.isWalkFlingActive = not playerState.isWalkFlingActive
 
     playSound()
 
-    if flingToggle then
-        flingToggle.Text = playerState.isWalkFlingActive and "FLINGING..." or "OFF"
+    if flingToggleRef then
+        flingToggleRef:Set(flingActive)
+    end
 
-        if playerState.isWalkFlingActive then
-            flingToggle.BackgroundColor3 = Color3.fromRGB(0,255,0)
-        else
-            flingToggle.BackgroundColor3 = Color3.fromRGB(0,0,0)
+    updateTargetStatusLabel()
+
+    if flingActive then
+        if not flingConnection then
+            flingConnection = RunService.PostSimulation:Connect(function()
+                if not flingActive then return end
+                if not LocalPlayer.Character then return end
+                local hrp = LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+                if not hrp then return end
+
+                for _, p in pairs(Players:GetPlayers()) do
+                    if p ~= LocalPlayer and p.Character then
+                        for _, part in pairs(p.Character:GetDescendants()) do
+                            if part:IsA("BasePart") then
+                                part.CanCollide = false
+                            end
+                        end
+                    end
+                end
+
+                local shouldFling = false
+                if targetMode and targetPlayer then
+                    if targetPlayer.Character then
+                        local tHrp = targetPlayer.Character:FindFirstChild("HumanoidRootPart")
+                        if tHrp then
+                            local dist = (hrp.Position - tHrp.Position).Magnitude
+                            if dist <= 20 then shouldFling = true end
+                        end
+                    end
+                else
+                    for _, p in pairs(Players:GetPlayers()) do
+                        if p ~= LocalPlayer and p.Character then
+                            local tHrp = p.Character:FindFirstChild("HumanoidRootPart")
+                            if tHrp then
+                                local dist = (hrp.Position - tHrp.Position).Magnitude
+                                if dist <= 20 then
+                                    shouldFling = true
+                                    break
+                                end
+                            end
+                        end
+                    end
+                end
+
+                if shouldFling then
+                    for _, v in pairs(LocalPlayer.Character:GetDescendants()) do
+                        if v:IsA("BasePart") then v.CanCollide = false end
+                    end
+                    local strength = flingPower * 5000
+                    local oldV = hrp.Velocity
+                    hrp.Velocity = Vector3.new(strength, strength, strength)
+                    RunService.RenderStepped:Wait()
+                    hrp.Velocity = oldV
+                end
+            end)
+        end
+    else
+        if flingConnection then
+            flingConnection:Disconnect()
+            flingConnection = nil
         end
     end
-
-    createNotification(
-        "flinging",
-        playerState.isWalkFlingActive and "ENABLED" or "DISABLED"
-    )
 end
 
--- Event Connections
-local function connectEvents(): ()
-
-table.insert(connections, namesToggleButton.MouseButton1Click:Connect(function()
-    ToggleNameTags()
-end))
-
-
-table.insert(connections, rejoinButton.MouseButton1Click:Connect(function()
-
-    if rejoinCooldown then
-        createNotification("Cooldown", "Please wait before using this again.")
-        return
+-- ===== USERNAME TAGS =====
+local function createNameTag(plr)
+    if plr == LocalPlayer then return end
+    local function setup(character)
+        local head = character:FindFirstChild("Head")
+        if not head then return end
+        local old = head:FindFirstChild("MariNameTag")
+        if old then old:Destroy() end
+        local gui = Instance.new("BillboardGui")
+        gui.Name = "MariNameTag"
+        gui.Adornee = head
+        gui.Size = UDim2.fromOffset(220, 40)
+        gui.StudsOffset = Vector3.new(0, 2.8, 0)
+        gui.MaxDistance = 500
+        gui.Enabled = namesVisible
+        gui.Parent = head
+        local label = Instance.new("TextLabel")
+        label.Size = UDim2.fromScale(1, 1)
+        label.BackgroundTransparency = 1
+        label.Text = plr.Name
+        label.TextColor3 = Color3.new(1,1,1)
+        label.TextStrokeTransparency = 0
+        label.TextStrokeColor3 = Color3.new(0,0,0)
+        label.Font = Enum.Font.GothamBold
+        label.TextSize = 18
+        label.Parent = gui
     end
-
-    rejoinCooldown = true
-    
-    playerState.isWalkFlingActive = false
-
-    createNotification("Rejoining", "Teleporting back into the server...")
-
-
-local TeleportService = game:GetService("TeleportService")
-
-local success, err = pcall(function()
-    TeleportService:TeleportToPlaceInstance(
-        game.PlaceId,
-        game.JobId,
-        player
-    )
-end)
-
-if not success then
-    createNotification("Teleport Failed", tostring(err))
-    rejoinCooldown = false
-    return
+    if plr.Character then setup(plr.Character) end
+    table.insert(connections, plr.CharacterAdded:Connect(setup))
 end
 
-task.delay(10, function()
-    rejoinCooldown = false
-end)
-
-end))
-
-
-table.insert(connections, Players.PlayerRemoving:Connect(function(p)
-    if targetPlayer == p then
-        targetPlayer = nil
-        targetInput.Text = ""
-        createNotification("Target Lost", "Player left the server")
-    end
-end))
-
-    table.insert(connections, targetArrow.MouseButton1Click:Connect(function()
-
-    targetDropdown.Visible = not targetDropdown.Visible
-
-    if targetDropdown.Visible then
-
-    -- Clear old button connections
-    for _, connection in ipairs(dropdownConnections) do
-        connection:Disconnect()
-    end
-
-    table.clear(dropdownConnections)
-
-    -- Remove old buttons
-    for _, child in pairs(targetDropdown:GetChildren()) do
-        if child:IsA("TextButton") then
-            child:Destroy()
-        end
-    end
-
-        for _, p in ipairs(Players:GetPlayers()) do
-            if p ~= player then
-
-                local button = Instance.new("TextButton")
-                button.Size = UDim2.new(1,0,0,25)
-                button.Text = p.Name
-                button.BackgroundColor3 = Color3.fromRGB(70,70,70)
-                button.TextColor3 = Color3.new(1,1,1)
-                button.Font = Enum.Font.SourceSansBold
-                button.TextSize = 14
-                button.Parent = targetDropdown
-
-                table.insert(dropdownConnections, button.MouseButton1Click:Connect(function()
-
-    -- Require flinging to be enabled before locking a target
-    if not playerState.isWalkFlingActive then
-        createNotification(
-            "Error",
-            "Flinging is not enabled! Turn on flinging first, then enter your target."
-        )
-
-        targetInput.Text = ""
-        targetDropdown.Visible = false
-        return
-    end
-
-    targetPlayer = p
-    targetInput.Text = p.Name
-    targetDropdown.Visible = false
-    targetMode = true
-
-    targetToggle.Text = "TARGET MODE: ON"
-
-    createNotification(
-        "Target Locked",
-        p.Name
-    )
-end))
+local function toggleNameTags()
+    namesVisible = not namesVisible
+    for _, plr in pairs(Players:GetPlayers()) do
+        if plr ~= LocalPlayer and plr.Character then
+            local head = plr.Character:FindFirstChild("Head")
+            if head then
+                local tag = head:FindFirstChild("MariNameTag")
+                if tag and tag:IsA("BillboardGui") then
+                    tag.Enabled = namesVisible
+                end
             end
         end
     end
-end))
+    createNotification("Usernames", namesVisible and "Enabled" or "Disabled")
+end
 
+-- ===== ANTI FLING =====
+local function toggleAntiFling(state)
+    if antiFlingConnection then
+        antiFlingConnection:Disconnect()
+        antiFlingConnection = nil
+    end
 
-    table.insert(connections, targetToggle.MouseButton1Click:Connect(function()
+    antiFlingEnabled = state
 
-    -- Require flinging to be enabled first
-    if not playerState.isWalkFlingActive then
-        createNotification(
-            "Error",
-            "Flinging is not enabled! Turn on flinging first, then enter your target."
-        )
+    if not state then
+        for part, value in pairs(originalCanCollide) do
+            if part and part.Parent then
+                part.CanCollide = value
+            end
+        end
+
+        table.clear(originalCanCollide)
+
+        createNotification("Anti Fling", "Disabled")
         return
     end
 
-    -- Don't allow target mode without a locked target
-    if not targetPlayer then
-        createNotification(
-            "Error",
-            "No target locked."
-        )
+    antiFlingConnection = RunService.Stepped:Connect(function()
+        for _, player in ipairs(Players:GetPlayers()) do
+            if player ~= LocalPlayer and player.Character then
+                for _, part in ipairs(player.Character:GetDescendants()) do
+                    if part:IsA("BasePart") then
+                        if originalCanCollide[part] == nil then
+                            originalCanCollide[part] = part.CanCollide
+                        end
+                        part.CanCollide = false
+                    end
+                end
+            end
+        end
+    end)
+
+    createNotification("Anti Fling", "Enabled")
+end
+
+-- ======FLY=========
+local function StartFly()
+  if flying then return end -- Prevent multiple fly loops
+flying = true
+		local Character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+        local Humanoid = Character:WaitForChild("Humanoid")
+        local Root = Character:WaitForChild("HumanoidRootPart")
+        flyGyro = Instance.new("BodyGyro")
+        flyVelocity = Instance.new("BodyVelocity")
+        flyGyro.P = 9e4
+		flyGyro.Parent = Root
+		flyVelocity.Parent = Root
+		flyGyro.MaxTorque = Vector3.new(9e9, 9e9, 9e9)
+		flyGyro.CFrame = Root.CFrame
+		flyVelocity.Velocity = Vector3.new(0, 0, 0)
+		flyVelocity.MaxForce = Vector3.new(9e9, 9e9, 9e9)
+        task.spawn(function()
+          while flying do
+        task.wait()
+			
+
+    if not flying or not flyVelocity or not flyGyro then
+        break
+    end
+
+    local camera = workspace.CurrentCamera
+				
+				
+
+				if CONTROL.L + CONTROL.R ~= 0 or CONTROL.F + CONTROL.B ~= 0 or CONTROL.Q + CONTROL.E ~= 0 then
+					SPEED = 50
+				elseif not (CONTROL.L + CONTROL.R ~= 0 or CONTROL.F + CONTROL.B ~= 0 or CONTROL.Q + CONTROL.E ~= 0) and SPEED ~= 0 then
+					SPEED = 0
+				end
+                
+				if (CONTROL.L + CONTROL.R) ~= 0 or (CONTROL.F + CONTROL.B) ~= 0 or (CONTROL.Q + CONTROL.E) ~= 0 then
+					flyVelocity.Velocity = ((camera.CFrame.LookVector * (CONTROL.F + CONTROL.B)) + ((camera.CFrame * CFrame.new(CONTROL.L + CONTROL.R, (CONTROL.F + CONTROL.B + CONTROL.Q + CONTROL.E) * 0.2, 0).p) - camera.CFrame.p)) * SPEED
+					lCONTROL = {F = CONTROL.F, B = CONTROL.B, L = CONTROL.L, R = CONTROL.R}
+				elseif (CONTROL.L + CONTROL.R) == 0 and (CONTROL.F + CONTROL.B) == 0 and (CONTROL.Q + CONTROL.E) == 0 and SPEED ~= 0 then
+					flyVelocity.Velocity = ((camera.CFrame.LookVector * (lCONTROL.F + lCONTROL.B)) + ((camera.CFrame * CFrame.new(lCONTROL.L + lCONTROL.R, (lCONTROL.F + lCONTROL.B + CONTROL.Q + CONTROL.E) * 0.2, 0).p) - camera.CFrame.p)) * SPEED
+				else
+					flyVelocity.Velocity = Vector3.new(0, 0, 0)
+				end
+				flyGyro.CFrame = camera.CFrame
+			end
+			CONTROL = {F = 0, B = 0, L = 0, R = 0, Q = 0, E = 0}
+			lCONTROL = {F = 0, B = 0, L = 0, R = 0, Q = 0, E = 0}
+			SPEED = 0
+
+            
+            
+    
+    
+
+			if Humanoid then Humanoid.PlatformStand = false end
+		end)
+        
+	end
+
+	
+
+
+local function StopFly()
+    flying = false
+    
+
+
+    if flyGyro then
+        flyGyro:Destroy()
+        flyGyro = nil
+    end
+
+    if flyVelocity then
+        flyVelocity:Destroy()
+        flyVelocity = nil
+    end
+
+    CONTROL = {F=0,B=0,L=0,R=0,Q=0,E=0}
+    lCONTROL = {F=0,B=0,L=0,R=0,Q=0,E=0}
+    SPEED = 0
+
+    local hum = Players.LocalPlayer.Character and Players.LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+    if hum then
+        hum.PlatformStand = false
+    end
+
+    workspace.CurrentCamera.CameraType = Enum.CameraType.Custom
+end
+
+-- ===== NOCLIP =====
+local function toggleNoclip(state)
+    noclipEnabled = state
+
+    if noclipConnection then
+        noclipConnection:Disconnect()
+        noclipConnection = nil
+    end
+
+    if not state then
+        -- Restore collisions
+        local character = LocalPlayer.Character
+        if character then
+            for _, part in ipairs(character:GetDescendants()) do
+                if part:IsA("BasePart") then
+                    part.CanCollide = true
+                end
+            end
+        end
+
+        createNotification("Noclip", "Disabled")
         return
     end
 
-    targetMode = not targetMode
+    noclipConnection = RunService.Stepped:Connect(function()
+        local character = LocalPlayer.Character
+        if not character then return end
 
-    targetToggle.Text = targetMode
-        and "TARGET MODE: ON"
-        or "TARGET MODE: OFF"
+        for _, part in ipairs(character:GetDescendants()) do
+            if part:IsA("BasePart") then
+                part.CanCollide = false
+            end
+        end
+    end)
 
-end))
+    createNotification("Noclip", "Enabled")
+end
+
+-- ===== SPECTATE =====
+local function stopSpectating()
+    if spectateConnection then
+        spectateConnection:Disconnect()
+        spectateConnection = nil
+    end
+
+    if spectateRespawnConnection then
+        spectateRespawnConnection:Disconnect()
+        spectateRespawnConnection = nil
+    end
+
+    spectateTarget = nil
+
+    local character = LocalPlayer.Character
+    if character then
+        local hum = character:FindFirstChildOfClass("Humanoid")
+        if hum then
+            workspace.CurrentCamera.CameraSubject = hum
+        end
+    end
+
+    createNotification("Spectate", "Stopped spectating.")
+end
+
+local function startSpectating(playerName)
+    if playerName == "" then
+        createNotification("Error", "Enter a player name.")
+        return
+    end
+
+    local target
+
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr ~= LocalPlayer and plr.Name:lower():sub(1,#playerName) == playerName:lower() then
+            target = plr
+            break
+        end
+    end
+
+    if not target then
+        createNotification("Error", "Player not found.")
+        return
+    end
+
+    stopSpectating()
+
+    spectateTarget = target
+
+    local function updateCamera()
+        if not spectateTarget then
+            return
+        end
+
+        local char = spectateTarget.Character
+        if not char then
+            return
+        end
+
+        local hum = char:FindFirstChildOfClass("Humanoid")
+
+        if hum then
+            workspace.CurrentCamera.CameraSubject = hum
+        end
+    end
+
+    updateCamera()
+
+    spectateRespawnConnection = target.CharacterAdded:Connect(function()
+        task.wait(0.2)
+        updateCamera()
+    end)
+
+    spectateConnection = workspace.CurrentCamera:GetPropertyChangedSignal("CameraSubject"):Connect(function()
+        updateCamera()
+    end)
+
+    createNotification("Spectate", "Viewing "..target.Name)
+end
+
+--fling hit detection--
+local function startFlingProtection()
+    if flingProtectionConnection then
+        flingProtectionConnection:Disconnect()
+    end
+
+    flingProtectionConnection = RunService.Heartbeat:Connect(function()
+        if not flingActive then
+            return
+        end
+
+        if flingProtectionCooldown then
+            return
+        end
+
+        local myChar = LocalPlayer.Character
+        local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
+        if not myRoot then
+            return
+        end
+
+        for _, plr in ipairs(Players:GetPlayers()) do
+            if plr ~= LocalPlayer and plr.Character then
+                local enemyRoot = plr.Character:FindFirstChild("HumanoidRootPart")
+                local hum = plr.Character:FindFirstChild("Humanoid")
+
+                if enemyRoot and hum then
+                    if (enemyRoot.Position - myRoot.Position).Magnitude <= 10 then
+
+                        local animator = hum:FindFirstChildOfClass("Animator")
+                        if animator then
+                            for _, track in ipairs(animator:GetPlayingAnimationTracks()) do
+                                local id = track.Animation.AnimationId:match("%d+")
+
+                                if id and DangerousAnimations[id] then
+                                    flingProtectionCooldown = true
+
+                                    toggleFling(false)
+
+                                    task.delay(2.5, function()
+                                        toggleFling(true)
+                                        flingProtectionCooldown = false
+                                    end)
+
+                                    return
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end)
+end
+
+-- ===== REJOIN =====
+local function rejoinServer()
+    if rejoinCooldown then
+        createNotification("Cooldown", "Wait a few seconds")
+        return
+    end
+    rejoinCooldown = true
+    flingActive = false
+    if flingConnection then
+        flingConnection:Disconnect()
+        flingConnection = nil
+    end
+    createNotification("Rejoining", "Teleporting...")
+    pcall(function()
+        TeleportService:TeleportToPlaceInstance(game.PlaceId, game.JobId, LocalPlayer)
+    end)
+    task.delay(10, function() rejoinCooldown = false end)
+end
+
+-- ===== INIT PLAYER TAGS =====
+for _, plr in pairs(Players:GetPlayers()) do
+    createNameTag(plr)
+end
+table.insert(connections, Players.PlayerAdded:Connect(createNameTag))
+
+-- ===== RAYFIELD UI =====
+
+-- Combat Tab
+local CombatTab = Window:CreateTab("⚔️ Combat", 4483362458)
+CombatTab:CreateToggle({
+    Name = "Auto Parry",
+    CurrentValue = false,
+    Callback = function(v) Config.AutoParry.Enabled = v end
+})
+CombatTab:CreateSlider({
+    Name = "Parry Range",
+    Range = {6, 25},
+    Increment = 1,
+    CurrentValue = 12,
+    Callback = function(v) Config.AutoParry.Range = v end
+})
+CombatTab:CreateSlider({
+    Name = "Base Delay (ms)",
+    Range = {20, 80},
+    Increment = 1,
+    CurrentValue = 38,
+    Callback = function(v) Config.AutoParry.BaseDelay = v/1000 end
+})
+CombatTab:CreateSlider({
+    Name = "Anim Highlight",
+    Range = {0.05, 0.35},
+    Increment = 0.01,
+    CurrentValue = 0.12,
+    Callback = function(v) Config.AutoParry.AnimHighlight = v end
+})
+CombatTab:CreateToggle({
+    Name = "Dynamic Timing",
+    CurrentValue = true,
+    Callback = function(v) Config.AutoParry.DynamicTiming = v end
+})
+CombatTab:CreateToggle({
+    Name = "Ping Compensation",
+    CurrentValue = true,
+    Callback = function(v) Config.AutoParry.PingCompensation = v end
+})
 
 
-table.insert(connections, targetInput.FocusLost:Connect(function(enterPressed)
-    if enterPressed then
-        updateTarget()
+-- ===== FLING TAB =====
+local FlingTab = Window:CreateTab("🚀 Fling", 4483362458)
+
+-- Toggle
+flingToggleRef = FlingTab:CreateToggle({
+    Name = "Enable Fling",
+    CurrentValue = false,
+    Callback = function(v)
+        if v ~= flingActive then
+            toggleFling(v)
+        end
+    end
+})
+
+-- Power Slider
+FlingTab:CreateSlider({
+    Name = "Fling Power",
+    Range = {0, 100},
+    Increment = 1,
+    CurrentValue = 50,
+    Callback = function(v)
+        flingPower = v
+    end
+})
+
+-- Target Mode Status
+targetStatusLabel = FlingTab:CreateLabel("Target Mode: OFF")
+updateTargetStatusLabel()
+
+-- Target Dropdown
+targetDropdown = FlingTab:CreateDropdown({
+    Name = "Target Player",
+    Options = {},
+    CurrentOption = "",
+    Callback = function(option)
+
+        if updatingDropdown then
+            return
+        end
+
+        local selected = option
+
+        if typeof(option) == "table" then
+            selected = option[1] or option.Name
+        elseif typeof(option) == "Instance" and option:IsA("Player") then
+            selected = option.Name
+        end
+
+        -- Ignore programmatic clears
+        if selected == nil or selected == "" then
+            return
+        end
+
+        if not flingActive then
+            if tick() - lastFlingError > 1 then
+                lastFlingError = tick()
+                createNotification("Error", "Fling must be enabled before selecting a target!")
+            end
+
+            task.defer(function()
+                if targetDropdown then
+                    updatingDropdown = true
+                    targetDropdown:Set("")
+                    task.defer(function()
+                        updatingDropdown = false
+                    end)
+                end
+            end)
+
+            return
+        end
+
+        for _, p in ipairs(Players:GetPlayers()) do
+    if p.Name == selected then
+        setTarget(p)
+        break
+    end
+end
+    end
+})
+
+-- SAFE refresh function with pcall
+local function refreshPlayerDropdown()
+    if not targetDropdown then return end
+    local playerNames = {}
+    for _, p in pairs(Players:GetPlayers()) do
+        if p ~= LocalPlayer then
+            table.insert(playerNames, p.Name)
+        end
+    end
+    -- Use pcall to catch any errors from Refresh
+    local success, err = pcall(function()
+        targetDropdown:Refresh(playerNames, true)
+    end)
+    if not success then
+        warn("Failed to refresh dropdown: " .. tostring(err))
+    end
+end
+
+-- Initial refresh with a small delay
+task.delay(0.1, refreshPlayerDropdown)
+
+-- Refresh when players join/leave
+table.insert(connections, Players.PlayerAdded:Connect(refreshPlayerDropdown))
+table.insert(connections, Players.PlayerRemoving:Connect(refreshPlayerDropdown))
+
+table.insert(connections, Players.PlayerRemoving:Connect(function(plr)
+    if plr == targetPlayer then
+        targetPlayer = nil
+
+        local wasTargetMode = targetMode
+        targetMode = false
+
+        updateTargetStatusLabel()
+
+        if targetDropdown then
+            updatingDropdown = true
+            targetDropdown:Set("")
+            task.defer(function()
+                updatingDropdown = false
+            end)
+        end
+
+        createNotification("Target", "Target left the game.")
+
+        if wasTargetMode then
+            createNotification("Target Mode", "OFF")
+        end
     end
 end))
 
-
-    table.insert(connections, flingToggle.MouseButton1Click:Connect(function()
-    if not scriptUnloaded then
-        toggleFling()
+-- Clear Target
+FlingTab:CreateButton({
+    Name = "Clear Target",
+    Callback = function()
+    if not targetPlayer and not targetMode then
+        createNotification("Target", "No target to clear.")
+        return
     end
-end))
 
-    table.insert(connections, flingMinButton.MouseButton1Click:Connect(function()
-    if not scriptUnloaded then
-        flingMain.Visible = false
-        flingMinIcon.Position = flingMain.Position
-        flingMinIcon.Visible = true
+    setTarget(nil)
+
+if targetDropdown then
+    updatingDropdown = true
+    targetDropdown:Set("")
+    task.defer(function()
+        updatingDropdown = false
+    end)
+ end
+end
+})
+
+-- Usernames Toggle
+FlingTab:CreateToggle({
+    Name = "Show Usernames",
+    CurrentValue = false,
+    Callback = function(v)
+        if v ~= namesVisible then
+            toggleNameTags()
+        end
     end
-end))
+})
 
-    table.insert(connections, UserInputService.InputBegan:Connect(function(input: InputObject, gameProcessed: boolean)
+-- Rejoin Button
+FlingTab:CreateButton({
+    Name = "Rejoin Server",
+    Callback = rejoinServer
+})
+
+-- Unload Button
+FlingTab:CreateButton({
+    Name = "Unload Hub",
+    Callback = function()
+    
+      -- Disable auto parry
+Config.AutoParry.Enabled = false
+
+if autoParryConnection then
+    autoParryConnection:Disconnect()
+    autoParryConnection = nil
+end
+
+---stop fling hit detection
+if flingProtectionConnection then
+    flingProtectionConnection:Disconnect()
+    flingProtectionConnection = nil
+end
+
+
+-- Stop noclip
+if noclipConnection then
+    noclipConnection:Disconnect()
+    noclipConnection = nil
+end
+
+noclipEnabled = false
+
+if LocalPlayer.Character then
+    for _, part in ipairs(LocalPlayer.Character:GetDescendants()) do
+        if part:IsA("BasePart") then
+            part.CanCollide = true
+        end
+    end
+end
+
+        --stop spectating 
+        stopSpectating()
+
+         --stop flying
+         if flying then
+    StopFly()
+end
+
+         -- Stop fling
+        flingActive = false
+
+        if flingConnection then
+            flingConnection:Disconnect()
+            flingConnection = nil
+        end
+
+         --stop antifling
+      if antiFlingConnection then
+      antiFlingConnection:Disconnect()
+      antiFlingConnection = nil
+   end
+
+
+        -- Disconnect stored connections
+        for _, connection in ipairs(connections) do
+            if connection then
+                connection:Disconnect()
+            end
+        end
+
+        -- Remove username tags
+        for _, plr in ipairs(Players:GetPlayers()) do
+            if plr.Character then
+                local head = plr.Character:FindFirstChild("Head")
+                if head then
+                    local tag = head:FindFirstChild("MariNameTag")
+                    if tag then
+                        tag:Destroy()
+                    end
+                end
+            end
+        end
+
+
+        -- Destroy sound
+        if sound then
+            sound:Destroy()
+        end
+
+        -- Close the UI
+        pcall(function()
+            Rayfield:Destroy()
+        end)
+    end
+})
+
+-- ===== MISC TAB =====
+local MiscTab = Window:CreateTab("🛠️ Misc", 4483362458)
+
+MiscTab:CreateToggle({
+    Name = "Anti Fling",
+    CurrentValue = false,
+    Callback = function(v)
+        toggleAntiFling(v)
+    end
+})
+
+MiscTab:CreateToggle({
+    Name = "Fly",
+    CurrentValue = false,
+    Callback = function(v)
+        if v then
+            StartFly()
+        else
+            StopFly()
+        end
+    end
+})
+
+MiscTab:CreateSlider({
+    Name = "Fly Speed",
+    Range = {1,10},
+    Increment = 1,
+    CurrentValue = 1,
+    Callback = function(v)
+        flySpeed = v
+    end
+})
+
+MiscTab:CreateToggle({
+    Name = "Noclip",
+    CurrentValue = false,
+    Callback = function(v)
+        toggleNoclip(v)
+    end
+})
+
+MiscTab:CreateInput({
+    Name = "Spectate Player",
+    PlaceholderText = "Username...",
+    RemoveTextAfterFocusLost = false,
+    Callback = function(text)
+        spectateName = text
+    end
+})
+
+MiscTab:CreateButton({
+    Name = "Start Spectating",
+    Callback = function()
+        startSpectating(spectateName)
+    end
+})
+
+MiscTab:CreateButton({
+    Name = "Stop Spectating",
+    Callback = function()
+        stopSpectating()
+    end
+})
+
+-- ===== KEYBINDS =====
+table.insert(connections,
+    UserInputService.InputBegan:Connect(function(input, gameProcessed)
         if gameProcessed then return end
 
-        if input.KeyCode == CONFIG.TOGGLE_KEY and not scriptUnloaded then
-    toggleFling()
-end
-    end))
+        if input.KeyCode == Enum.KeyCode.X then
+            toggleFling(nil)
+        end
+    end)
+)
 
+-- ===== AUTO PARRY LOGIC =====
+local AttackAnimations = {
+    "120393553812903","1259761673936","134945199381140","117877243065533",
+    "106965238908791","131071815103338","1370347470470618","118943955490014",
+    "132022052139564","78888626472394","103964436023727","71676634048602",
+    "114647502301740","134829666925953","112759168172605","104867156139010",
+    "137837926745158","100981571094705","130865087635587","86495068205420",
+    "96726284968458","139911027872047","104515319350296","74960202100098",
+    "76236532060812","74206130671324","71919935695307","122861547142657",
+    "137980914350618","100408082509740","94803478352691","78695517680318",
+    "83491849294956","89420531853362","83730275893449","106980660082799","137034747040618",
+}
+
+local lastParry = 0
+local parryCooldown = {}
+
+local function GetPing()
+    return (game:GetService("Stats").Network.ServerStatsItem["Data Ping"]:GetValue() / 1000) or 0.05
 end
 
--- Initialize
-local function initialize(): ()
-    if not player.Character then
-        player.CharacterAdded:Wait()
+local function IsAttackAnimation(track)
+    if not track or not track.Animation then return false end
+    local id = track.Animation.AnimationId:match("%d+")
+    for _, animId in ipairs(AttackAnimations) do
+        if id == animId then return true end
     end
+    return false
+end
 
-    createFlingGUI()
-    setupWalkFlingLogic()
-    connectEvents()
+autoParryConnection = RunService.Heartbeat:Connect(function()
+    if not Config.AutoParry.Enabled then return end
+    
+    local char = LocalPlayer.Character
+    local root = char and char:FindFirstChild("HumanoidRootPart")
+    if not root then return end
 
-    -- Create username tags
+    local ping = Config.AutoParry.PingCompensation and GetPing() or 0
+
     for _, plr in ipairs(Players:GetPlayers()) do
-        CreateNameTag(plr)
+        if plr == LocalPlayer or not plr.Character then continue end
+        if parryCooldown[plr] and tick() - parryCooldown[plr] < Config.AutoParry.Cooldown then continue end
+
+        local enemy = plr.Character
+        local eRoot = enemy:FindFirstChild("HumanoidRootPart")
+        local eHum = enemy:FindFirstChild("Humanoid")
+        if not eRoot or not eHum then continue end
+
+        local distance = (eRoot.Position - root.Position).Magnitude
+        if distance > Config.AutoParry.Range + 6 then continue end
+
+        local animator = eHum:FindFirstChildOfClass("Animator")
+        if not animator then continue end
+
+        for _, track in ipairs(animator:GetPlayingAnimationTracks()) do
+            if track.IsPlaying and IsAttackAnimation(track) then
+                local timePos = track.TimePosition
+                local speed = track.Speed or 1.0
+
+                local shouldParry = false
+                if Config.AutoParry.DynamicTiming then
+                    if timePos >= Config.AutoParry.AnimHighlight and timePos < 0.78 then
+                        if speed > 1.2 then
+                            shouldParry = timePos < 0.65
+                        else
+                            shouldParry = timePos < 0.75
+                        end
+                    end
+                else
+                    if timePos >= Config.AutoParry.AnimHighlight and timePos < 0.82 then
+                        shouldParry = true
+                    end
+                end
+
+                if shouldParry then
+                    local finalDelay = Config.AutoParry.BaseDelay + ping * 0.6
+                    if distance < 9 then
+                        finalDelay = math.max(0.018, finalDelay - 0.022)
+                    end
+
+                    task.delay(finalDelay, function()
+                        if tick() - lastParry < 0.1 then return end
+                        lastParry = tick()
+                        parryCooldown[plr] = tick()
+
+                        VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.F, false, game)
+                        task.wait(Config.AutoParry.AttackDelay)
+                        VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.F, false, game)
+
+                        task.wait(0.08)
+                        VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.E, false, game)
+                        task.wait(0.1)
+                        VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.E, false, game)
+                    end)
+                end
+            end
+        end
     end
+end)
 
-    -- Future players
-    table.insert(connections, Players.PlayerAdded:Connect(CreateNameTag))
+startFlingProtection()
 
-    print("✅  mari's FLING.EXE loaded!")
+-- ===== STARTUP =====
+Rayfield:Notify({
+    Title = "MARI-HUB",
+    Content = "Auto Parry + Fling loaded (stable)",
+    Duration = 8,
+})
 
-    -- ═══════════════════════════════════════════════════════════════
-    -- SEND EXECUTION LOG TO DISCORD WEBHOOK (ONLY ON LOAD)
-    -- ═══════════════════════════════════════════════════════════════
-    sendExecutionLog()
-end
+sendExecutionLog()
 
--- ═══════════════════════════════════════════════════════════════
--- START SCRIPT (Calls Key System First)
--- ═══════════════════════════════════════════════════════════════
--- (mari bypass)
-if player.UserId == 1591715403 then
-    createNotification("hello mari!", "Loading without key...")
-    initialize()
-else
-    startKeySystem(initialize)
 end
