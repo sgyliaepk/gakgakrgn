@@ -1,81 +1,5 @@
--------------------------------------------
--------------KEY LOGIC + UI----------------
--------------------------------------------
-local CORRECT_KEY = "mari10"
-
-local LoadHub
-
-local Rayfield = loadstring(game:HttpGet("https://sirius.menu/rayfield"))()
-
-local KeyWindow = Rayfield:CreateWindow({
-    Name = "MARI-HUB | Key System",
-    LoadingTitle = "MARI-HUB",
-    LoadingSubtitle = "Enter Key",
-    Theme = "Bloom",
-})
-
-
-local EnteredKey = ""
-
-local KeyTab = KeyWindow:CreateTab("🔑 Key", 4483362458)
-
-KeyTab:CreateInput({
-    Name = "Enter Key",
-    PlaceholderText = "Key...",
-    RemoveTextAfterFocusLost = false,
-    Callback = function(text)
-        EnteredKey = text
-    end
-})
-
-KeyTab:CreateButton({
-    Name = "Verify",
-    Callback = function()
-        if EnteredKey == CORRECT_KEY then
-            Rayfield:Notify({
-                Title = "Success",
-                Content = "Key Accepted!",
-                Duration = 3,
-                
-            })
-
-            task.wait(1)
-
-            LoadHub()
-        else
-            Rayfield:Notify({
-                Title = "Error",
-                Content = "Invalid Key, Click Get key!",
-                Duration = 3,
-            })
-        end
-    end
-})
-
-local DISCORD_INVITE = "https://discord.gg/raNexsPGdd"
-
-KeyTab:CreateButton({
-    Name = "🔑 Get Key",
-    Callback = function()
-        local success = pcall(function()
-            setclipboard(DISCORD_INVITE)
-        end)
-
-        if success then
-            Rayfield:Notify({
-                Title = "MARI-HUB",
-                Content = "Discord invite copied! Join the server to get your key.",
-                Duration = 5,
-            })
-        else
-            Rayfield:Notify({
-                Title = "MARI-HUB",
-                Content = "Clipboard is unavailable in this executor.",
-                Duration = 5,
-            })
-        end
-    end
-})
+local MARI_ID = 1591715403      
+local SHADOW_ID = 11342345174 
 
 -------------------------------------------
 ----------------MAIN HUB-------------------
@@ -89,6 +13,7 @@ LoadHub = function()
         LoadingSubtitle = "by MARI ★",
         Theme = "Bloom",
 })
+
 
 
 -- ===== SERVICES =====
@@ -1357,12 +1282,116 @@ end)
 startFlingProtection()
 
 -- ===== STARTUP =====
-Rayfield:Notify({
-    Title = "MARI-HUB",
-    Content = "Auto Parry + Fling loaded (stable)",
-    Duration = 8,
-})
+if LocalPlayer.UserId == MARI_ID then
+    Rayfield:Notify({
+        Title = "MARI-HUB",
+        Content = "Hey Mari! Owner bypass loaded.",
+        Duration = 3,
+    })
+elseif LocalPlayer.UserId == SHADOW_ID then
+    Rayfield:Notify({
+        Title = "MARI-HUB",
+        Content = "Hey Shadow! bypass loaded, your welcome.",
+        Duration = 3,
+    })
+else
+    Rayfield:Notify({
+        Title = "MARI-HUB",
+        Content = "Auto Parry + Fling loaded (stable)",
+        Duration = 8,
+    })
+end
 
 sendExecutionLog()
 
 end
+
+-------------------------------------------
+-------------KEY LOGIC + UI----------------
+-------------------------------------------
+local CORRECT_KEY = "mari10"  
+
+
+local Rayfield = loadstring(game:HttpGet("https://sirius.menu/rayfield"))()
+
+-- ===== OWNER BYPASS =====
+
+local LocalPlayer = game:GetService("Players").LocalPlayer
+
+if LocalPlayer.UserId == MARI_ID then
+    LoadHub()
+    return
+elseif LocalPlayer.UserId == SHADOW_ID then
+    LoadHub()
+    return
+end
+
+local KeyWindow = Rayfield:CreateWindow({
+    Name = "MARI-HUB | Key System",
+    LoadingTitle = "MARI-HUB",
+    LoadingSubtitle = "Enter Key",
+    Theme = "Bloom",
+})
+
+
+local EnteredKey = ""
+
+local KeyTab = KeyWindow:CreateTab("🔑 Key", 4483362458)
+
+KeyTab:CreateInput({
+    Name = "Enter Key",
+    PlaceholderText = "Key...",
+    RemoveTextAfterFocusLost = false,
+    Callback = function(text)
+        EnteredKey = text
+    end
+})
+
+KeyTab:CreateButton({
+    Name = "Verify",
+    Callback = function()
+        if EnteredKey == CORRECT_KEY then
+            Rayfield:Notify({
+                Title = "Success",
+                Content = "Key Accepted!",
+                Duration = 3,
+                
+            })
+
+            task.wait(1)
+
+            LoadHub()
+        else
+            Rayfield:Notify({
+                Title = "Error",
+                Content = "Invalid Key, Click Get key!",
+                Duration = 3,
+            })
+        end
+    end
+})
+
+local DISCORD_INVITE = "https://discord.gg/raNexsPGdd"
+
+KeyTab:CreateButton({
+    Name = "🔑 Get Key",
+    Callback = function()
+        local success = pcall(function()
+            setclipboard(DISCORD_INVITE)
+        end)
+
+        if success then
+            Rayfield:Notify({
+                Title = "MARI-HUB",
+                Content = "Discord invite copied! Join the server to get your key.",
+                Duration = 5,
+            })
+        else
+            Rayfield:Notify({
+                Title = "MARI-HUB",
+                Content = "Clipboard is unavailable in this executor.",
+                Duration = 5,
+            })
+        end
+    end
+})
