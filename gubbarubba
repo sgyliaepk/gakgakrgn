@@ -1,5 +1,6 @@
 local MARI_ID = 1591715403      
-local SHADOW_ID = 11342345174 
+local SHADOW_ID = 11342345174
+local LOMIC_ID = 365840809
 
 -------------------------------------------
 ----------------MAIN HUB-------------------
@@ -61,6 +62,7 @@ local connections = {}
 local lastFlingError = 0
 local updatingDropdown = false
 
+
 local flingToggleRef = nil
 local targetStatusLabel = nil
 local targetDropdown = nil
@@ -87,6 +89,7 @@ local spectateTarget = nil
 local spectateConnection = nil
 local spectateRespawnConnection = nil
 local spectateName = ""
+local teleportName = ""
 
 ----fling hit detection------
 local flingProtectionConnection
@@ -642,6 +645,49 @@ local function startSpectating(playerName)
     createNotification("Spectate", "Viewing "..target.Name)
 end
 
+-- ===== TELEPORT TO PLAYER =====
+local function teleportToPlayer(playerName)
+    if playerName == "" then
+        createNotification("Error", "Enter a player name.")
+        return
+    end
+
+    local target
+
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr ~= LocalPlayer and plr.Name:lower():sub(1, #playerName) == playerName:lower() then
+            target = plr
+            break
+        end
+    end
+
+    if not target then
+        createNotification("Error", "Player not found.")
+        return
+    end
+
+    local myCharacter = LocalPlayer.Character
+    local targetCharacter = target.Character
+
+    if not myCharacter or not targetCharacter then
+        createNotification("Error", "Character unavailable.")
+        return
+    end
+
+    local myRoot = myCharacter:FindFirstChild("HumanoidRootPart")
+    local targetRoot = targetCharacter:FindFirstChild("HumanoidRootPart")
+
+    if not myRoot or not targetRoot then
+        createNotification("Error", "HumanoidRootPart missing.")
+        return
+    end
+
+    -- Teleport slightly behind the player
+    myRoot.CFrame = targetRoot.CFrame * CFrame.new(0, 0, -3)
+
+    createNotification("Teleported", "Teleported to "..target.Name)
+end
+
 --fling hit detection--
 local function startFlingProtection()
     if flingProtectionConnection then
@@ -1169,6 +1215,22 @@ MiscTab:CreateButton({
     end
 })
 
+MiscTab:CreateInput({
+    Name = "Teleport To Player",
+    PlaceholderText = "Username...",
+    RemoveTextAfterFocusLost = false,
+    Callback = function(text)
+        teleportName = text
+    end
+})
+
+MiscTab:CreateButton({
+    Name = "Teleport",
+    Callback = function()
+        teleportToPlayer(teleportName)
+    end
+})
+
 -- ===== KEYBINDS =====
 table.insert(connections,
     UserInputService.InputBegan:Connect(function(input, gameProcessed)
@@ -1294,6 +1356,12 @@ elseif LocalPlayer.UserId == SHADOW_ID then
         Content = "Hey Shadow! bypass loaded, your welcome.",
         Duration = 3,
     })
+elseif LocalPlayer.UserId == LOMIC_ID then
+    Rayfield:Notify({
+        Title = "MARI-HUB",
+        Content = "Hey jayden! bypass loaded, your welcome.",
+        Duration = 3,
+    })   
 else
     Rayfield:Notify({
         Title = "MARI-HUB",
@@ -1324,7 +1392,12 @@ if LocalPlayer.UserId == MARI_ID then
 elseif LocalPlayer.UserId == SHADOW_ID then
     LoadHub()
     return
-end
+elseif LocalPlayer.UserId == LOMIC_ID then 
+    LoadHub()
+    return
+end 
+
+
 
 local KeyWindow = Rayfield:CreateWindow({
     Name = "MARI-HUB | Key System",
