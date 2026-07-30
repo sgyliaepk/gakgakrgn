@@ -91,6 +91,13 @@ local spectateRespawnConnection = nil
 local spectateName = ""
 local teleportName = ""
 
+-- ===== TARGET LOCK =====
+local Camera = workspace.CurrentCamera
+local Mouse = Players.LocalPlayer:GetMouse()
+
+local targetLockTarget = nil
+local targetLockConnection = nil
+
 ----fling hit detection------
 local flingProtectionConnection
 
@@ -645,6 +652,79 @@ local function startSpectating(playerName)
     createNotification("Spectate", "Viewing "..target.Name)
 end
 
+-- ===== TARGET LOCK ap =====
+
+local function stopTargetLock()
+    if targetLockConnection then
+        targetLockConnection:Disconnect()
+        targetLockConnection = nil
+    end
+
+    targetLockTarget = nil
+
+    createNotification("Target Lock", "Disabled")
+end
+
+local function startTargetLock(player)
+    stopTargetLock()
+
+    targetLockTarget = player
+
+    targetLockConnection = RunService.RenderStepped:Connect(function()
+
+        if not Config.AutoParry.Enabled then
+            stopTargetLock()
+            return
+        end
+
+        if not targetLockTarget then
+            stopTargetLock()
+            return
+        end
+
+        local myCharacter = LocalPlayer.Character
+        local targetCharacter = targetLockTarget.Character
+
+        if not myCharacter or not targetCharacter then
+            stopTargetLock()
+            return
+        end
+
+        local myRoot = myCharacter:FindFirstChild("HumanoidRootPart")
+        local targetRoot = targetCharacter:FindFirstChild("HumanoidRootPart")
+        local targetHumanoid = targetCharacter:FindFirstChild("Humanoid")
+
+        if not myRoot or not targetRoot or not targetHumanoid then
+            stopTargetLock()
+            return
+        end
+
+        if targetHumanoid.Health <= 0 then
+            stopTargetLock()
+            return
+        end
+
+        -- Face the target
+myRoot.CFrame = CFrame.lookAt(
+    myRoot.Position,
+    Vector3.new(
+        targetRoot.Position.X,
+        myRoot.Position.Y,
+        targetRoot.Position.Z
+    )
+)
+
+-- Camera lock
+Camera.CFrame = CFrame.lookAt(
+    Camera.CFrame.Position,
+    targetRoot.Position
+)
+
+    end)
+
+    createNotification("Target Lock", "Locked onto "..player.Name)
+end
+
 -- ===== TELEPORT TO PLAYER =====
 local function teleportToPlayer(playerName)
     if playerName == "" then
@@ -819,8 +899,15 @@ local CombatTab = Window:CreateTab("⚔️ Combat", 4483362458)
 CombatTab:CreateToggle({
     Name = "Auto Parry",
     CurrentValue = false,
-    Callback = function(v) Config.AutoParry.Enabled = v end
+    Callback = function(v)
+    Config.AutoParry.Enabled = v
+
+    if not v then
+        stopTargetLock()
+    end
+end
 })
+
 CombatTab:CreateSlider({
     Name = "Parry Range",
     Range = {6, 25},
@@ -1028,6 +1115,10 @@ FlingTab:CreateButton({
     Name = "Unload Hub",
     Callback = function()
     
+--stop target lock
+stopTargetLock()
+
+
 ---disable shadow step
 blinkOn = false
 
@@ -1239,6 +1330,67 @@ table.insert(connections,
         if input.KeyCode == Enum.KeyCode.X then
             toggleFling(nil)
         end
+    end)
+)
+
+table.insert(connections,
+    UserInputService.InputBegan:Connect(function(input, gameProcessed)
+        if gameProcessed then return end
+        if input.KeyCode ~= Enum.KeyCode.H then return end
+
+        -- Only works when Auto Parry is enabled
+        if not Config.AutoParry.Enabled then
+            return
+        end
+
+        -- Press H again to unlock
+        if targetLockTarget then
+            stopTargetLock()
+            return
+        end
+
+                local camera = workspace.CurrentCamera
+local screenCenter = camera.ViewportSize / 2
+local MAX_LOCK_DISTANCE = 25
+
+local myRoot = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+if not myRoot then return end
+
+local closestPlayer = nil
+local closestDistance = math.huge
+
+for _, player in ipairs(Players:GetPlayers()) do
+    if player ~= LocalPlayer and player.Character then
+        local root = player.Character:FindFirstChild("HumanoidRootPart")
+        local hum = player.Character:FindFirstChild("Humanoid")
+
+        if root and hum and hum.Health > 0 then
+    local distance = (root.Position - myRoot.Position).Magnitude
+
+    if distance <= MAX_LOCK_DISTANCE then
+        local screenPos, visible = camera:WorldToViewportPoint(root.Position)
+
+        if visible then
+            local dist = (Vector2.new(screenPos.X, screenPos.Y) - screenCenter).Magnitude
+
+            if dist < closestDistance then
+                closestDistance = dist
+                closestPlayer = player
+            end
+        end
+    end
+end
+    end
+end
+
+if closestPlayer then
+    startTargetLock(closestPlayer)
+else
+    createNotification(
+    "Target Lock",
+    "No valid target found."
+)
+end
     end)
 )
 
