@@ -79,6 +79,7 @@ local flySpeed = 1
 local QEfly = true
 local flyGyro
 local flyVelocity
+local flyEnabledNoclip = false
 
 -- ===== NOCLIP =====
 local noclipEnabled = false
@@ -445,10 +446,58 @@ local function toggleAntiFling(state)
     createNotification("Anti Fling", "Enabled")
 end
 
+-- ===== NOCLIP =====
+local function toggleNoclip(state, silent)
+    noclipEnabled = state
+
+    if noclipConnection then
+        noclipConnection:Disconnect()
+        noclipConnection = nil
+    end
+
+    if not state then
+        -- Restore collisions
+        local character = LocalPlayer.Character
+        if character then
+            for _, part in ipairs(character:GetDescendants()) do
+                if part:IsA("BasePart") then
+                    part.CanCollide = true
+                end
+            end
+        end
+
+        if not silent then
+    createNotification("Noclip", "Disabled")
+end
+        return
+    end
+
+    noclipConnection = RunService.Stepped:Connect(function()
+        local character = LocalPlayer.Character
+        if not character then return end
+
+        for _, part in ipairs(character:GetDescendants()) do
+            if part:IsA("BasePart") then
+                part.CanCollide = false
+            end
+        end
+    end)
+
+    if not silent then
+    createNotification("Noclip", "Enabled")
+end
+end
+
 -- ======FLY=========
 local function StartFly()
   if flying then return end -- Prevent multiple fly loops
 flying = true
+if not noclipEnabled then
+    flyEnabledNoclip = true
+    toggleNoclip(true, true)
+else
+    flyEnabledNoclip = false
+end
 		local Character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
         local Humanoid = Character:WaitForChild("Humanoid")
         local Root = Character:WaitForChild("HumanoidRootPart")
@@ -532,45 +581,12 @@ local function StopFly()
     end
 
     workspace.CurrentCamera.CameraType = Enum.CameraType.Custom
+    if flyEnabledNoclip then
+    toggleNoclip(false, true)
+    flyEnabledNoclip = false
+end
 end
 
--- ===== NOCLIP =====
-local function toggleNoclip(state)
-    noclipEnabled = state
-
-    if noclipConnection then
-        noclipConnection:Disconnect()
-        noclipConnection = nil
-    end
-
-    if not state then
-        -- Restore collisions
-        local character = LocalPlayer.Character
-        if character then
-            for _, part in ipairs(character:GetDescendants()) do
-                if part:IsA("BasePart") then
-                    part.CanCollide = true
-                end
-            end
-        end
-
-        createNotification("Noclip", "Disabled")
-        return
-    end
-
-    noclipConnection = RunService.Stepped:Connect(function()
-        local character = LocalPlayer.Character
-        if not character then return end
-
-        for _, part in ipairs(character:GetDescendants()) do
-            if part:IsA("BasePart") then
-                part.CanCollide = false
-            end
-        end
-    end)
-
-    createNotification("Noclip", "Enabled")
-end
 
 -- ===== SPECTATE =====
 local function stopSpectating()
