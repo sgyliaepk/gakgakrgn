@@ -811,7 +811,7 @@ local function startFlingProtection()
                 local hum = plr.Character:FindFirstChild("Humanoid")
 
                 if enemyRoot and hum then
-                    if (enemyRoot.Position - myRoot.Position).Magnitude <= 10 then
+                    if (enemyRoot.Position - myRoot.Position).Magnitude <= 8 then
 
                         local animator = hum:FindFirstChildOfClass("Animator")
                         if animator then
