@@ -823,7 +823,7 @@ local function startFlingProtection()
 
                                     toggleFling(false)
 
-                                    task.delay(2.5, function()
+                                    task.delay(3.5, function()
                                         toggleFling(true)
                                         flingProtectionCooldown = false
                                     end)
