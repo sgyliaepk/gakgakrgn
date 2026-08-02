@@ -1,4 +1,4 @@
-local MARI_ID = 1591715403      
+local MARI_ID = 1591715403     
 local SHADOW_ID = 11342345174
 local LOMIC_ID = 365840809
 
@@ -1550,6 +1550,58 @@ local CORRECT_KEY = "mari10"
 
 local Rayfield = loadstring(game:HttpGet("https://sirius.menu/rayfield"))()
 
+local KEY_FILE = "MARI_HUB_KEY_SAVE.txt"
+local KEY_DURATION = 15 * 60 * 60 -- 15 hours in seconds
+
+local function saveKeyAccess()
+    if not writefile then
+        return
+    end
+
+    local expirationTime = os.time() + KEY_DURATION
+
+    pcall(function()
+        writefile(KEY_FILE, tostring(expirationTime))
+    end)
+end
+
+local function hasSavedKeyAccess()
+    if not isfile or not readfile then
+        return false
+    end
+
+    if not isfile(KEY_FILE) then
+        return false
+    end
+
+    local success, savedData = pcall(function()
+        return readfile(KEY_FILE)
+    end)
+
+    if not success then
+        return false
+    end
+
+    local expirationTime = tonumber(savedData)
+
+    if not expirationTime then
+        return false
+    end
+
+    if os.time() < expirationTime then
+        return true
+    end
+
+    -- Saved key expired
+    if delfile then
+        pcall(function()
+            delfile(KEY_FILE)
+        end)
+    end
+
+    return false
+end
+
 -- ===== OWNER BYPASS =====
 
 local LocalPlayer = game:GetService("Players").LocalPlayer
@@ -1565,7 +1617,15 @@ elseif LocalPlayer.UserId == LOMIC_ID then
     return
 end 
 
+-- ===== SAVED KEY CHECK =====
 
+if hasSavedKeyAccess() then
+    print("Saved key found. Loading hub...")
+
+    LoadHub()
+
+    return
+end
 
 local KeyWindow = Rayfield:CreateWindow({
     Name = "MARI-HUB | Key System",
@@ -1592,12 +1652,13 @@ KeyTab:CreateButton({
     Name = "Verify",
     Callback = function()
         if EnteredKey == CORRECT_KEY then
-            Rayfield:Notify({
-                Title = "Success",
-                Content = "Key Accepted!",
-                Duration = 3,
-                
-            })
+    saveKeyAccess() -- Save the 15-hour access
+
+    Rayfield:Notify({
+        Title = "Success",
+        Content = "Key accepted! Saved for 15 hours.",
+        Duration = 3,
+    })
 
             task.wait(1)
 
