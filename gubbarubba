@@ -6,7 +6,7 @@ local LOMIC_ID = 365840809
 ----------------MAIN HUB-------------------
 -------------------------------------------
 
-LoadHub = function()
+LoadHub = function(usedSavedKey)
     local Rayfield = loadstring(game:HttpGet("https://sirius.menu/rayfield"))()
         local Window = Rayfield:CreateWindow({
         Name = "MARI-HUB | Gakuran",
@@ -1538,6 +1538,17 @@ else
     })
 end
 
+-- Show directly after the normal startup notification
+if usedSavedKey then
+    task.delay(0.3, function()
+        Rayfield:Notify({
+            Title = "MARI-HUB",
+            Content = "Saved key detected! Skipped key system.",
+            Duration = 4,
+        })
+    end)
+end
+
 sendExecutionLog()
 
 end
@@ -1620,10 +1631,7 @@ end
 -- ===== SAVED KEY CHECK =====
 
 if hasSavedKeyAccess() then
-    print("Saved key found. Loading hub...")
-
-    LoadHub()
-
+    LoadHub(true)
     return
 end
 
