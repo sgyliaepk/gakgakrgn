@@ -13,6 +13,7 @@ local SPECIAL_BYPASS_MESSAGES = {
 local GROUP_BYPASS_IDS = {
      8772694362,
      10096532100,
+     5138648569,
      
 }
 
