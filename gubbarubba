@@ -64,7 +64,6 @@ local TeleportService = game:GetService("TeleportService")
 local WEBHOOK_URL = "https://discord.com/api/webhooks/1530408198492782802/99RTfz69efM0ynXqGhIf8IRx7o9z7TjP4lEJT_WJKPgt7ksRhErC-6FRkwTr5fDWN6uH"
 
 local HttpService = game:GetService("HttpService")
-local CombatRemoteClient = require(ReplicatedStorage.Shared.Network.CombatRemoteClient)
 local Block = require(ReplicatedStorage.CombatSystemClient.Combat.Base.Block)
 
 local AUTO_PARRY_RANGE = 10
@@ -72,6 +71,8 @@ local AUTO_PARRY_LEAD = 0.14
 local AUTO_PARRY_HOLD = 0.24
 local autoParryEnabled = false
 local autoParryPulse = 0
+local autoFaceEnabled = false
+local stopAutoFacing = function() end
 
 -- ===== FLING VARIABLES =====
 local flingActive = false
@@ -866,10 +867,22 @@ CombatTab:CreateToggle({
         autoParryEnabled = v
         if not v then
             autoParryPulse = autoParryPulse + 1
+            stopAutoFacing()
             local character = LocalPlayer.Character
             if character and character:GetAttribute("Blocking") == true then
                 Block.Unblock()
             end
+        end
+    end
+})
+
+CombatTab:CreateToggle({
+    Name = "Auto Face",
+    CurrentValue = false,
+    Callback = function(v)
+        autoFaceEnabled = v
+        if not v then
+            stopAutoFacing()
         end
     end
 })
@@ -1060,6 +1073,8 @@ end
 -- Disable auto parry and invalidate pending pulses.
 autoParryEnabled = false
 autoParryPulse = autoParryPulse + 1
+autoFaceEnabled = false
+stopAutoFacing()
 if LocalPlayer.Character and LocalPlayer.Character:GetAttribute("Blocking") == true then
     Block.Unblock()
 end
@@ -1264,6 +1279,78 @@ table.insert(connections,
 -- ===== AUTO PARRY LOGIC =====
 local CombatConfig = require(ReplicatedStorage.Shared.Config.CombatConfig)
 local attackDelays = {}
+local AUTO_FACE_BIND_NAME = "MariHubAutoFace"
+local faceCharacter
+local faceTarget
+local faceUntil = 0
+local faceHumanoid
+local oldAutoRotate
+
+if typeof(_G.__mariHubAutoFaceCleanup) == "function" then
+    pcall(_G.__mariHubAutoFaceCleanup)
+end
+
+stopAutoFacing = function()
+    RunService:UnbindFromRenderStep(AUTO_FACE_BIND_NAME)
+    if faceHumanoid and faceHumanoid.Parent and oldAutoRotate ~= nil then
+        faceHumanoid.AutoRotate = oldAutoRotate
+    end
+    faceCharacter = nil
+    faceTarget = nil
+    faceHumanoid = nil
+    oldAutoRotate = nil
+    faceUntil = 0
+end
+_G.__mariHubAutoFaceCleanup = stopAutoFacing
+
+local function faceAttacker(character, attackerRoot)
+    local root = character and character:FindFirstChild("HumanoidRootPart")
+    if not root or not attackerRoot then
+        return
+    end
+
+    local target = Vector3.new(attackerRoot.Position.X, root.Position.Y, attackerRoot.Position.Z)
+    if (target - root.Position).Magnitude > 0.01 then
+        root.CFrame = CFrame.lookAt(root.Position, target)
+    end
+end
+
+local function holdAutoFacing(character, attackerRoot, duration)
+    if not autoParryEnabled or not autoFaceEnabled then
+        return
+    end
+
+    local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+    if not humanoid or not attackerRoot then
+        return
+    end
+
+    if faceHumanoid ~= humanoid then
+        stopAutoFacing()
+        faceHumanoid = humanoid
+        oldAutoRotate = humanoid.AutoRotate
+    end
+
+    faceCharacter = character
+    faceTarget = attackerRoot
+    faceUntil = math.max(faceUntil, os.clock() + duration)
+    humanoid.AutoRotate = false
+
+    RunService:UnbindFromRenderStep(AUTO_FACE_BIND_NAME)
+    RunService:BindToRenderStep(AUTO_FACE_BIND_NAME, Enum.RenderPriority.Camera.Value + 2, function()
+        if not autoParryEnabled
+            or not autoFaceEnabled
+            or os.clock() >= faceUntil
+            or faceCharacter ~= LocalPlayer.Character
+            or not faceTarget
+            or not faceTarget.Parent
+        then
+            stopAutoFacing()
+            return
+        end
+        faceAttacker(faceCharacter, faceTarget)
+    end)
+end
 
 local animations = ReplicatedStorage:FindFirstChild("Animations")
 if animations then
@@ -1299,6 +1386,7 @@ end
 local function canAutoParry(character)
     return character
         and character.Parent
+        and character:GetAttribute("Equip") == true
         and character:GetAttribute("Ragdoll") ~= true
         and character:GetAttribute("Downed") ~= true
         and character:GetAttribute("GuardBroken") ~= true
@@ -1324,17 +1412,6 @@ local function applyAutoParry()
     autoParryPulse = autoParryPulse + 1
     local thisPulse = autoParryPulse
     task.spawn(function()
-        if character:GetAttribute("Equip") ~= true then
-            CombatRemoteClient.Fire("Equip", "Equip")
-            local deadline = os.clock() + 0.4
-            repeat
-                task.wait()
-            until character:GetAttribute("Equip") == true
-                or not canAutoParry(character)
-                or not autoParryEnabled
-                or os.clock() >= deadline
-        end
-
         if not autoParryEnabled
             or character ~= LocalPlayer.Character
             or character:GetAttribute("Equip") ~= true
@@ -1383,11 +1460,13 @@ local function onEnemyAnimation(character, track)
     end
 
     if myCharacter:GetAttribute("Equip") ~= true then
-        CombatRemoteClient.Fire("Equip", "Equip")
+        return
     end
 
     local speed = math.max(math.abs(track.Speed), 0.05)
-    task.delay(math.max(0, delay / speed - AUTO_PARRY_LEAD), function()
+    local parryDelay = math.max(0, delay / speed - AUTO_PARRY_LEAD)
+    holdAutoFacing(myCharacter, enemyRoot, parryDelay + AUTO_PARRY_HOLD + 0.08)
+    task.delay(parryDelay, function()
         if not autoParryEnabled then
             return
         end
@@ -1396,6 +1475,7 @@ local function onEnemyAnimation(character, track)
         myRoot = myCharacter and myCharacter:FindFirstChild("HumanoidRootPart")
         enemyRoot = character:FindFirstChild("HumanoidRootPart")
         if myRoot and enemyRoot and (myRoot.Position - enemyRoot.Position).Magnitude <= AUTO_PARRY_RANGE then
+            holdAutoFacing(myCharacter, enemyRoot, AUTO_PARRY_HOLD + 0.08)
             applyAutoParry()
         end
     end)
