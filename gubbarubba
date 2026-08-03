@@ -55,31 +55,23 @@ LoadHub = function(usedSavedKey)
 
 -- ===== SERVICES =====
 local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
-local VirtualInputManager = game:GetService("VirtualInputManager")
 local LocalPlayer = Players.LocalPlayer
 local TeleportService = game:GetService("TeleportService")
 
 local WEBHOOK_URL = "https://discord.com/api/webhooks/1530408198492782802/99RTfz69efM0ynXqGhIf8IRx7o9z7TjP4lEJT_WJKPgt7ksRhErC-6FRkwTr5fDWN6uH"
 
 local HttpService = game:GetService("HttpService")
-local Players = game:GetService("Players")
-local LocalPlayer = Players.LocalPlayer
+local CombatRemoteClient = require(ReplicatedStorage.Shared.Network.CombatRemoteClient)
+local Block = require(ReplicatedStorage.CombatSystemClient.Combat.Base.Block)
 
--- ===== AUTO PARRY CONFIG =====
-local Config = {
-    AutoParry = {
-        Enabled = false,
-        Range = 12,
-        BaseDelay = 0.038,
-        AnimHighlight = 0.12,
-        Cooldown = 0.08,
-        AttackDelay = 0.11,
-        DynamicTiming = true,
-        PingCompensation = true,
-    },
-}
+local AUTO_PARRY_RANGE = 10
+local AUTO_PARRY_LEAD = 0.14
+local AUTO_PARRY_HOLD = 0.24
+local autoParryEnabled = false
+local autoParryPulse = 0
 
 -- ===== FLING VARIABLES =====
 local flingActive = false
@@ -93,7 +85,6 @@ local antiFlingEnabled = false
 local antiFlingConnection = nil
 local blinkConnection
 local originalCanCollide = {}
-local autoParryConnection
 local connections = {}
 local lastFlingError = 0
 local updatingDropdown = false
@@ -127,13 +118,6 @@ local spectateConnection = nil
 local spectateRespawnConnection = nil
 local spectateName = ""
 local teleportName = ""
-
--- ===== TARGET LOCK =====
-local Camera = workspace.CurrentCamera
-local Mouse = Players.LocalPlayer:GetMouse()
-
-local targetLockTarget = nil
-local targetLockConnection = nil
 
 ----fling hit detection------
 local flingProtectionConnection
@@ -704,79 +688,6 @@ local function startSpectating(playerName)
     createNotification("Spectate", "Viewing "..target.Name)
 end
 
--- ===== TARGET LOCK ap =====
-
-local function stopTargetLock()
-    if targetLockConnection then
-        targetLockConnection:Disconnect()
-        targetLockConnection = nil
-    end
-
-    targetLockTarget = nil
-
-    createNotification("Target Lock", "Disabled")
-end
-
-local function startTargetLock(player)
-    stopTargetLock()
-
-    targetLockTarget = player
-
-    targetLockConnection = RunService.RenderStepped:Connect(function()
-
-        if not Config.AutoParry.Enabled then
-            stopTargetLock()
-            return
-        end
-
-        if not targetLockTarget then
-            stopTargetLock()
-            return
-        end
-
-        local myCharacter = LocalPlayer.Character
-        local targetCharacter = targetLockTarget.Character
-
-        if not myCharacter or not targetCharacter then
-            stopTargetLock()
-            return
-        end
-
-        local myRoot = myCharacter:FindFirstChild("HumanoidRootPart")
-        local targetRoot = targetCharacter:FindFirstChild("HumanoidRootPart")
-        local targetHumanoid = targetCharacter:FindFirstChild("Humanoid")
-
-        if not myRoot or not targetRoot or not targetHumanoid then
-            stopTargetLock()
-            return
-        end
-
-        if targetHumanoid.Health <= 0 then
-            stopTargetLock()
-            return
-        end
-
-        -- Face the target
-myRoot.CFrame = CFrame.lookAt(
-    myRoot.Position,
-    Vector3.new(
-        targetRoot.Position.X,
-        myRoot.Position.Y,
-        targetRoot.Position.Z
-    )
-)
-
--- Camera lock
-Camera.CFrame = CFrame.lookAt(
-    Camera.CFrame.Position,
-    targetRoot.Position
-)
-
-    end)
-
-    createNotification("Target Lock", "Locked onto "..player.Name)
-end
-
 -- ===== TELEPORT TO PLAYER =====
 local function teleportToPlayer(playerName)
     if playerName == "" then
@@ -952,44 +863,15 @@ CombatTab:CreateToggle({
     Name = "Auto Parry",
     CurrentValue = false,
     Callback = function(v)
-    Config.AutoParry.Enabled = v
-
-    if not v then
-        stopTargetLock()
+        autoParryEnabled = v
+        if not v then
+            autoParryPulse = autoParryPulse + 1
+            local character = LocalPlayer.Character
+            if character and character:GetAttribute("Blocking") == true then
+                Block.Unblock()
+            end
+        end
     end
-end
-})
-
-CombatTab:CreateSlider({
-    Name = "Parry Range",
-    Range = {6, 25},
-    Increment = 1,
-    CurrentValue = 12,
-    Callback = function(v) Config.AutoParry.Range = v end
-})
-CombatTab:CreateSlider({
-    Name = "Base Delay (ms)",
-    Range = {20, 80},
-    Increment = 1,
-    CurrentValue = 38,
-    Callback = function(v) Config.AutoParry.BaseDelay = v/1000 end
-})
-CombatTab:CreateSlider({
-    Name = "Anim Highlight",
-    Range = {0.05, 0.35},
-    Increment = 0.01,
-    CurrentValue = 0.12,
-    Callback = function(v) Config.AutoParry.AnimHighlight = v end
-})
-CombatTab:CreateToggle({
-    Name = "Dynamic Timing",
-    CurrentValue = true,
-    Callback = function(v) Config.AutoParry.DynamicTiming = v end
-})
-CombatTab:CreateToggle({
-    Name = "Ping Compensation",
-    CurrentValue = true,
-    Callback = function(v) Config.AutoParry.PingCompensation = v end
 })
 
 
@@ -1166,11 +1048,6 @@ FlingTab:CreateButton({
 FlingTab:CreateButton({
     Name = "Unload Hub",
     Callback = function()
-    
---stop target lock
-stopTargetLock()
-
-
 ---disable shadow step
 blinkOn = false
 
@@ -1180,12 +1057,11 @@ if blinkConnection then
 end
 
 
-      -- Disable auto parry
-Config.AutoParry.Enabled = false
-
-if autoParryConnection then
-    autoParryConnection:Disconnect()
-    autoParryConnection = nil
+-- Disable auto parry and invalidate pending pulses.
+autoParryEnabled = false
+autoParryPulse = autoParryPulse + 1
+if LocalPlayer.Character and LocalPlayer.Character:GetAttribute("Blocking") == true then
+    Block.Unblock()
 end
 
 ---stop fling hit detection
@@ -1385,165 +1261,173 @@ table.insert(connections,
     end)
 )
 
-table.insert(connections,
-    UserInputService.InputBegan:Connect(function(input, gameProcessed)
-        if gameProcessed then return end
-        if input.KeyCode ~= Enum.KeyCode.H then return end
+-- ===== AUTO PARRY LOGIC =====
+local CombatConfig = require(ReplicatedStorage.Shared.Config.CombatConfig)
+local attackDelays = {}
 
-        -- Only works when Auto Parry is enabled
-        if not Config.AutoParry.Enabled then
+local animations = ReplicatedStorage:FindFirstChild("Animations")
+if animations then
+    for _, animation in ipairs(animations:GetDescendants()) do
+        if animation:IsA("Animation") then
+            local lowerName = animation.Name:lower()
+            local combo = tonumber(lowerName:match("^(%d)"))
+            local isM1 = combo and lowerName:find("m1", 1, true)
+            local isM2 = lowerName:sub(1, 2) == "m2"
+            if isM1 or isM2 then
+                local style = "default"
+                local parent = animation.Parent
+                if parent and parent.Name ~= "BaseCombat" then
+                    style = parent.Name:lower():gsub("otheranims$", ""):gsub("anims$", "")
+                end
+
+                local delay
+                if isM1 then
+                    delay = CombatConfig.GetScaledStyleM1HitboxDelay(style, combo, 1)
+                else
+                    delay = CombatConfig.GetStyleM2HitboxDelay(style)
+                end
+
+                local id = animation.AnimationId:match("%d+")
+                if id and typeof(delay) == "number" then
+                    attackDelays[id] = delay
+                end
+            end
+        end
+    end
+end
+
+local function canAutoParry(character)
+    return character
+        and character.Parent
+        and character:GetAttribute("Ragdoll") ~= true
+        and character:GetAttribute("Downed") ~= true
+        and character:GetAttribute("GuardBroken") ~= true
+        and character:GetAttribute("Greenzone") ~= true
+        and character:GetAttribute("RpCombatLocked") ~= true
+end
+
+local function stampBlockInput()
+    local credits = _G.__GakuranAcCombatInputCreditAt
+    if typeof(credits) ~= "table" then
+        credits = {}
+        _G.__GakuranAcCombatInputCreditAt = credits
+    end
+    credits["Block.Activated"] = tick()
+end
+
+local function applyAutoParry()
+    local character = LocalPlayer.Character
+    if not autoParryEnabled or not canAutoParry(character) then
+        return
+    end
+
+    autoParryPulse = autoParryPulse + 1
+    local thisPulse = autoParryPulse
+    task.spawn(function()
+        if character:GetAttribute("Equip") ~= true then
+            CombatRemoteClient.Fire("Equip", "Equip")
+            local deadline = os.clock() + 0.4
+            repeat
+                task.wait()
+            until character:GetAttribute("Equip") == true
+                or not canAutoParry(character)
+                or not autoParryEnabled
+                or os.clock() >= deadline
+        end
+
+        if not autoParryEnabled
+            or character ~= LocalPlayer.Character
+            or character:GetAttribute("Equip") ~= true
+            or not canAutoParry(character)
+        then
             return
         end
 
-        -- Press H again to unlock
-        if targetLockTarget then
-            stopTargetLock()
+        if character:GetAttribute("Blocking") == true then
+            Block.Unblock()
+            task.wait()
+        end
+
+        stampBlockInput()
+        Block.Block()
+
+        task.delay(AUTO_PARRY_HOLD, function()
+            if autoParryEnabled
+                and thisPulse == autoParryPulse
+                and character == LocalPlayer.Character
+                and character:GetAttribute("Blocking") == true
+            then
+                Block.Unblock()
+            end
+        end)
+    end)
+end
+
+local function onEnemyAnimation(character, track)
+    if not autoParryEnabled then
+        return
+    end
+
+    local animation = track.Animation
+    local id = animation and animation.AnimationId:match("%d+")
+    local delay = id and attackDelays[id]
+    if not delay then
+        return
+    end
+
+    local myCharacter = LocalPlayer.Character
+    local myRoot = myCharacter and myCharacter:FindFirstChild("HumanoidRootPart")
+    local enemyRoot = character:FindFirstChild("HumanoidRootPart")
+    if not myRoot or not enemyRoot or (myRoot.Position - enemyRoot.Position).Magnitude > AUTO_PARRY_RANGE then
+        return
+    end
+
+    if myCharacter:GetAttribute("Equip") ~= true then
+        CombatRemoteClient.Fire("Equip", "Equip")
+    end
+
+    local speed = math.max(math.abs(track.Speed), 0.05)
+    task.delay(math.max(0, delay / speed - AUTO_PARRY_LEAD), function()
+        if not autoParryEnabled then
             return
         end
 
-                local camera = workspace.CurrentCamera
-local screenCenter = camera.ViewportSize / 2
-local MAX_LOCK_DISTANCE = 25
+        myCharacter = LocalPlayer.Character
+        myRoot = myCharacter and myCharacter:FindFirstChild("HumanoidRootPart")
+        enemyRoot = character:FindFirstChild("HumanoidRootPart")
+        if myRoot and enemyRoot and (myRoot.Position - enemyRoot.Position).Magnitude <= AUTO_PARRY_RANGE then
+            applyAutoParry()
+        end
+    end)
+end
 
-local myRoot = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-if not myRoot then return end
+local function wireAutoParryCharacter(player, character)
+    if player == LocalPlayer then
+        return
+    end
 
-local closestPlayer = nil
-local closestDistance = math.huge
+    local humanoid = character:FindFirstChildOfClass("Humanoid") or character:WaitForChild("Humanoid", 10)
+    local animator = humanoid and (humanoid:FindFirstChildOfClass("Animator") or humanoid:WaitForChild("Animator", 5))
+    if animator then
+        table.insert(connections, animator.AnimationPlayed:Connect(function(track)
+            onEnemyAnimation(character, track)
+        end))
+    end
+end
+
+local function wireAutoParryPlayer(player)
+    if player.Character then
+        task.spawn(wireAutoParryCharacter, player, player.Character)
+    end
+    table.insert(connections, player.CharacterAdded:Connect(function(character)
+        wireAutoParryCharacter(player, character)
+    end))
+end
 
 for _, player in ipairs(Players:GetPlayers()) do
-    if player ~= LocalPlayer and player.Character then
-        local root = player.Character:FindFirstChild("HumanoidRootPart")
-        local hum = player.Character:FindFirstChild("Humanoid")
-
-        if root and hum and hum.Health > 0 then
-    local distance = (root.Position - myRoot.Position).Magnitude
-
-    if distance <= MAX_LOCK_DISTANCE then
-        local screenPos, visible = camera:WorldToViewportPoint(root.Position)
-
-        if visible then
-            local dist = (Vector2.new(screenPos.X, screenPos.Y) - screenCenter).Magnitude
-
-            if dist < closestDistance then
-                closestDistance = dist
-                closestPlayer = player
-            end
-        end
-    end
+    wireAutoParryPlayer(player)
 end
-    end
-end
-
-if closestPlayer then
-    startTargetLock(closestPlayer)
-else
-    createNotification(
-    "Target Lock",
-    "No valid target found."
-)
-end
-    end)
-)
-
--- ===== AUTO PARRY LOGIC =====
-local AttackAnimations = {
-    "120393553812903","1259761673936","134945199381140","117877243065533",
-    "106965238908791","131071815103338","1370347470470618","118943955490014",
-    "132022052139564","78888626472394","103964436023727","71676634048602",
-    "114647502301740","134829666925953","112759168172605","104867156139010",
-    "137837926745158","100981571094705","130865087635587","86495068205420",
-    "96726284968458","139911027872047","104515319350296","74960202100098",
-    "76236532060812","74206130671324","71919935695307","122861547142657",
-    "137980914350618","100408082509740","94803478352691","78695517680318",
-    "83491849294956","89420531853362","83730275893449","106980660082799","137034747040618",
-}
-
-local lastParry = 0
-local parryCooldown = {}
-
-local function GetPing()
-    return (game:GetService("Stats").Network.ServerStatsItem["Data Ping"]:GetValue() / 1000) or 0.05
-end
-
-local function IsAttackAnimation(track)
-    if not track or not track.Animation then return false end
-    local id = track.Animation.AnimationId:match("%d+")
-    for _, animId in ipairs(AttackAnimations) do
-        if id == animId then return true end
-    end
-    return false
-end
-
-autoParryConnection = RunService.Heartbeat:Connect(function()
-    if not Config.AutoParry.Enabled then return end
-    
-    local char = LocalPlayer.Character
-    local root = char and char:FindFirstChild("HumanoidRootPart")
-    if not root then return end
-
-    local ping = Config.AutoParry.PingCompensation and GetPing() or 0
-
-    for _, plr in ipairs(Players:GetPlayers()) do
-        if plr == LocalPlayer or not plr.Character then continue end
-        if parryCooldown[plr] and tick() - parryCooldown[plr] < Config.AutoParry.Cooldown then continue end
-
-        local enemy = plr.Character
-        local eRoot = enemy:FindFirstChild("HumanoidRootPart")
-        local eHum = enemy:FindFirstChild("Humanoid")
-        if not eRoot or not eHum then continue end
-
-        local distance = (eRoot.Position - root.Position).Magnitude
-        if distance > Config.AutoParry.Range + 6 then continue end
-
-        local animator = eHum:FindFirstChildOfClass("Animator")
-        if not animator then continue end
-
-        for _, track in ipairs(animator:GetPlayingAnimationTracks()) do
-            if track.IsPlaying and IsAttackAnimation(track) then
-                local timePos = track.TimePosition
-                local speed = track.Speed or 1.0
-
-                local shouldParry = false
-                if Config.AutoParry.DynamicTiming then
-                    if timePos >= Config.AutoParry.AnimHighlight and timePos < 0.78 then
-                        if speed > 1.2 then
-                            shouldParry = timePos < 0.65
-                        else
-                            shouldParry = timePos < 0.75
-                        end
-                    end
-                else
-                    if timePos >= Config.AutoParry.AnimHighlight and timePos < 0.82 then
-                        shouldParry = true
-                    end
-                end
-
-                if shouldParry then
-                    local finalDelay = Config.AutoParry.BaseDelay + ping * 0.6
-                    if distance < 9 then
-                        finalDelay = math.max(0.018, finalDelay - 0.022)
-                    end
-
-                    task.delay(finalDelay, function()
-                        if tick() - lastParry < 0.1 then return end
-                        lastParry = tick()
-                        parryCooldown[plr] = tick()
-
-                        VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.F, false, game)
-                        task.wait(Config.AutoParry.AttackDelay)
-                        VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.F, false, game)
-
-                        task.wait(0.08)
-                        VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.E, false, game)
-                        task.wait(0.1)
-                        VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.E, false, game)
-                    end)
-                end
-            end
-        end
-    end
-end)
+table.insert(connections, Players.PlayerAdded:Connect(wireAutoParryPlayer))
 
 startFlingProtection()
 
