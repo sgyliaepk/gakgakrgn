@@ -1,6 +1,40 @@
-local MARI_ID = 1591715403     
+local MARI_ID = 1591715403    
 local SHADOW_ID = 11342345174
 local LOMIC_ID = 365840809
+
+-- Existing bypass users keep their own custom messages.
+local SPECIAL_BYPASS_MESSAGES = {
+    [MARI_ID] = "Hey Mari! Owner bypass loaded.",
+    [SHADOW_ID] = "Hey Shadow! bypass loaded, your welcome.",
+    [LOMIC_ID] = "Hey jayden! bypass loaded, your welcome.",
+}
+
+-- Add new bypass UserIds here. Everyone in this list gets the same message.
+local GROUP_BYPASS_IDS = {
+     8772694362,
+     10096532100,
+     
+}
+
+local GROUP_BYPASS_MESSAGE = "Hey! bypass loaded."
+
+local function isBypassUser(userId)
+    if SPECIAL_BYPASS_MESSAGES[userId] then
+        return true
+    end
+
+    for _, bypassId in ipairs(GROUP_BYPASS_IDS) do
+        if userId == bypassId then
+            return true
+        end
+    end
+
+    return false
+end
+
+local function getBypassMessage(userId)
+    return SPECIAL_BYPASS_MESSAGES[userId] or GROUP_BYPASS_MESSAGE
+end
 
 -------------------------------------------
 ----------------MAIN HUB-------------------
@@ -1512,24 +1546,12 @@ end)
 startFlingProtection()
 
 -- ===== STARTUP =====
-if LocalPlayer.UserId == MARI_ID then
+if isBypassUser(LocalPlayer.UserId) then
     Rayfield:Notify({
         Title = "MARI-HUB",
-        Content = "Hey Mari! Owner bypass loaded.",
+        Content = getBypassMessage(LocalPlayer.UserId),
         Duration = 3,
     })
-elseif LocalPlayer.UserId == SHADOW_ID then
-    Rayfield:Notify({
-        Title = "MARI-HUB",
-        Content = "Hey Shadow! bypass loaded, your welcome.",
-        Duration = 3,
-    })
-elseif LocalPlayer.UserId == LOMIC_ID then
-    Rayfield:Notify({
-        Title = "MARI-HUB",
-        Content = "Hey jayden! bypass loaded, your welcome.",
-        Duration = 3,
-    })   
 else
     Rayfield:Notify({
         Title = "MARI-HUB",
@@ -1617,16 +1639,10 @@ end
 
 local LocalPlayer = game:GetService("Players").LocalPlayer
 
-if LocalPlayer.UserId == MARI_ID then
+if isBypassUser(LocalPlayer.UserId) then
     LoadHub()
     return
-elseif LocalPlayer.UserId == SHADOW_ID then
-    LoadHub()
-    return
-elseif LocalPlayer.UserId == LOMIC_ID then 
-    LoadHub()
-    return
-end 
+end
 
 -- ===== SAVED KEY CHECK =====
 
