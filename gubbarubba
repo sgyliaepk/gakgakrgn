@@ -1446,6 +1446,30 @@ MiscTab:CreateButton({
     end
 })
 
+MiscTab:CreateButton({
+    Name = "Force Reset",
+    Callback = function()
+        local character = LocalPlayer.Character
+        local hrp = character and character:FindFirstChild("HumanoidRootPart")
+        if not hrp then
+            createNotification("Force Reset", "Character unavailable.")
+            return
+        end
+
+        local success = pcall(function()
+            hrp.AssemblyLinearVelocity = Vector3.new(0, 200000, 0)
+        end)
+
+        if not success then
+            pcall(function()
+                hrp.Velocity = Vector3.new(0, 200000, 0)
+            end)
+        end
+
+        createNotification("Force Reset", "Launched!")
+    end
+})
+
 -- ===== KEYBINDS =====
 table.insert(connections,
     UserInputService.InputBegan:Connect(function(input, gameProcessed)
