@@ -11,11 +11,12 @@ local SPECIAL_BYPASS_MESSAGES = {
 
 -- Add new bypass UserIds here. Everyone in this list gets the same message.
 local GROUP_BYPASS_IDS = {
-     8772694362,
-     10096532100,
-     5138648569,
-     2512540080,
-     2732818388,
+     8772694362, ---aimlock
+     10096532100, ---xca
+     5138648569, ---taie
+     2512540080, ---art
+     2732818388, ---afusive
+     4546138453, ---toshin
      
 }
 
