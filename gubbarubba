@@ -1778,7 +1778,7 @@ end
 -------------------------------------------
 -------------KEY LOGIC + UI----------------
 -------------------------------------------
-local CORRECT_KEY = "mari10"  
+local CORRECT_KEY = "mari999mari"  
 
 
 local Rayfield = loadstring(game:HttpGet("https://sirius.menu/rayfield"))()
