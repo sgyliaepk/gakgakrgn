@@ -621,6 +621,22 @@ local function toggleAntiFling(state)
     createNotification("Anti Fling", "Enabled")
 end
 
+-- ===== ANTI VOID =====
+local antiVoidEnabled = false
+local originalFallenPartsDestroyHeight = workspace.FallenPartsDestroyHeight
+
+local function toggleAntiVoid(state)
+    antiVoidEnabled = state
+
+    if state then
+        workspace.FallenPartsDestroyHeight = 0/0
+        createNotification("Anti Void", "Enabled")
+    else
+        workspace.FallenPartsDestroyHeight = originalFallenPartsDestroyHeight
+        createNotification("Anti Void", "Disabled")
+    end
+end
+
 -- ===== NOCLIP =====
 local function toggleNoclip(state, silent)
     noclipEnabled = state
@@ -1300,6 +1316,11 @@ end
       antiFlingConnection = nil
    end
 
+         --stop antivoid
+         if antiVoidEnabled then
+            toggleAntiVoid(false)
+         end
+
 
         -- Disconnect stored connections
         for _, connection in ipairs(connections) do
@@ -1347,6 +1368,14 @@ MiscTab:CreateToggle({
     CurrentValue = false,
     Callback = function(v)
         toggleAntiFling(v)
+    end
+})
+
+MiscTab:CreateToggle({
+    Name = "Anti Void",
+    CurrentValue = false,
+    Callback = function(v)
+        toggleAntiVoid(v)
     end
 })
 
