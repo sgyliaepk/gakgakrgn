@@ -66,6 +66,7 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
+local VirtualInputManager = game:GetService("VirtualInputManager")
 local LocalPlayer = Players.LocalPlayer
 local TeleportService = game:GetService("TeleportService")
 
@@ -138,6 +139,27 @@ local connections = {}
 local lastFlingError = 0
 local updatingDropdown = false
 
+-- ===== CONFIG VARIABLES =====
+local autoParryToggle = nil
+local pingCompensationToggle = nil
+local autoFaceToggle = nil
+local healthBarsToggle = nil
+local flingPowerSlider = nil
+local showUsernamesToggle = nil
+local antiFlingToggle = nil
+local antiVoidToggle = nil
+local flyToggle = nil
+local flySpeedSlider = nil
+local noclipToggle = nil
+local shadowStepToggle = nil
+local shadowStepDistSlider = nil
+local configDropdown = nil
+local autoLoadDropdown = nil
+local configNameInput = ""
+local selectedConfig = nil
+local autoLoadSelected = nil
+local heartAutoToggle = nil
+
 
 local flingToggleRef = nil
 local targetStatusLabel = nil
@@ -167,28 +189,6 @@ local spectateConnection = nil
 local spectateRespawnConnection = nil
 local spectateName = ""
 local teleportName = ""
-
-----fling hit detection------
-local flingProtectionConnection
-
-local DangerousAnimations = {
-    ["120393553812903"] = true,
-    ["1259761673936"] = true,
-    ["134945199381140"] = true,
-    ["117877243065533"] = true,
-    ["106965238908791"] = true,
-    ["131071815103338"] = true,
-    ["1370347470470618"] = true,
-    ["118943955490014"] = true,
-    ["132022052139564"] = true,
-    ["78888626472394"] = true,
-    ["103964436023727"] = true,
-    ["71676634048602"] = true,
-    ["137034747040618"] = true,
-    ["122861547142657"] = true,
-}
-
-local flingProtectionCooldown = false
 
 --------shadow step-------
 local blinkOn = false
@@ -351,6 +351,56 @@ local function setTarget(player)
 end
 
 -- ===== FLING LOGIC =====
+local flingPartsByChar = {}
+local flingCharConnections = {}
+
+local function onFlingPartAdded(char, desc)
+    if desc:IsA("BasePart") then
+        local list = flingPartsByChar[char]
+        if list then
+            table.insert(list, desc)
+        end
+    end
+end
+
+local function wireFlingCharacter(char)
+    if flingPartsByChar[char] then
+        return
+    end
+
+    local list = {}
+    for _, part in ipairs(char:GetDescendants()) do
+        if part:IsA("BasePart") then
+            table.insert(list, part)
+        end
+    end
+    flingPartsByChar[char] = list
+
+    table.insert(flingCharConnections, char.DescendantAdded:Connect(function(desc)
+        onFlingPartAdded(char, desc)
+    end))
+    table.insert(flingCharConnections, char.DescendantRemoving:Connect(function(desc)
+        local l = flingPartsByChar[char]
+        if l and desc:IsA("BasePart") then
+            for i = #l, 1, -1 do
+                if l[i] == desc then
+                    table.remove(l, i)
+                end
+            end
+        end
+    end))
+end
+
+local function clearFlingWiring()
+    for _, conn in ipairs(flingCharConnections) do
+        pcall(function()
+            conn:Disconnect()
+        end)
+    end
+    table.clear(flingCharConnections)
+    table.clear(flingPartsByChar)
+end
+
 local function toggleFling(newState)
     if newState == nil then
         flingActive = not flingActive
@@ -376,10 +426,14 @@ local function toggleFling(newState)
 
                 for _, p in pairs(Players:GetPlayers()) do
                     if p ~= LocalPlayer and p.Character then
-                        for _, part in pairs(p.Character:GetDescendants()) do
-                            if part:IsA("BasePart") then
-                                part.CanCollide = false
-                            end
+                        wireFlingCharacter(p.Character)
+                    end
+                end
+
+                for _, parts in pairs(flingPartsByChar) do
+                    for _, part in ipairs(parts) do
+                        if part and part.Parent and part.CanCollide then
+                            part.CanCollide = false
                         end
                     end
                 end
@@ -410,7 +464,7 @@ local function toggleFling(newState)
 
                 if shouldFling then
                     for _, v in pairs(LocalPlayer.Character:GetDescendants()) do
-                        if v:IsA("BasePart") then v.CanCollide = false end
+                        if v:IsA("BasePart") and v.CanCollide then v.CanCollide = false end
                     end
                     local strength = flingPower * 5000
                     local oldV = hrp.Velocity
@@ -425,6 +479,7 @@ local function toggleFling(newState)
             flingConnection:Disconnect()
             flingConnection = nil
         end
+        clearFlingWiring()
     end
 end
 
@@ -582,6 +637,72 @@ local function setHealthBarsVisible(state)
 end
 
 -- ===== ANTI FLING =====
+local antiFlingPartsByChar = {}
+local antiFlingCharConnections = {}
+
+local function onAntiFlingPartAdded(char, desc)
+    if desc:IsA("BasePart") then
+        if originalCanCollide[desc] == nil then
+            originalCanCollide[desc] = desc.CanCollide
+        end
+        local list = antiFlingPartsByChar[char]
+        if list then
+            table.insert(list, desc)
+        end
+    end
+end
+
+local function wireAntiFlingCharacter(char)
+    if antiFlingPartsByChar[char] then
+        return
+    end
+
+    local list = {}
+    for _, part in ipairs(char:GetDescendants()) do
+        if part:IsA("BasePart") then
+            if originalCanCollide[part] == nil then
+                originalCanCollide[part] = part.CanCollide
+            end
+            table.insert(list, part)
+        end
+    end
+    antiFlingPartsByChar[char] = list
+
+    table.insert(antiFlingCharConnections, char.DescendantAdded:Connect(function(desc)
+        onAntiFlingPartAdded(char, desc)
+    end))
+    table.insert(antiFlingCharConnections, char.DescendantRemoving:Connect(function(desc)
+        local l = antiFlingPartsByChar[char]
+        if l and desc:IsA("BasePart") then
+            for i = #l, 1, -1 do
+                if l[i] == desc then
+                    table.remove(l, i)
+                end
+            end
+        end
+    end))
+end
+
+local function wireAntiFlingPlayer(player)
+    if player == LocalPlayer then
+        return
+    end
+    if player.Character then
+        wireAntiFlingCharacter(player.Character)
+    end
+    table.insert(antiFlingCharConnections, player.CharacterAdded:Connect(wireAntiFlingCharacter))
+end
+
+local function clearAntiFlingWiring()
+    for _, conn in ipairs(antiFlingCharConnections) do
+        pcall(function()
+            conn:Disconnect()
+        end)
+    end
+    table.clear(antiFlingCharConnections)
+    table.clear(antiFlingPartsByChar)
+end
+
 local function toggleAntiFling(state)
     if antiFlingConnection then
         antiFlingConnection:Disconnect()
@@ -598,21 +719,23 @@ local function toggleAntiFling(state)
         end
 
         table.clear(originalCanCollide)
+        clearAntiFlingWiring()
 
         createNotification("Anti Fling", "Disabled")
         return
     end
 
+    for _, player in ipairs(Players:GetPlayers()) do
+        wireAntiFlingPlayer(player)
+    end
+
+    table.insert(antiFlingCharConnections, Players.PlayerAdded:Connect(wireAntiFlingPlayer))
+
     antiFlingConnection = RunService.Stepped:Connect(function()
-        for _, player in ipairs(Players:GetPlayers()) do
-            if player ~= LocalPlayer and player.Character then
-                for _, part in ipairs(player.Character:GetDescendants()) do
-                    if part:IsA("BasePart") then
-                        if originalCanCollide[part] == nil then
-                            originalCanCollide[part] = part.CanCollide
-                        end
-                        part.CanCollide = false
-                    end
+        for _, parts in pairs(antiFlingPartsByChar) do
+            for _, part in ipairs(parts) do
+                if part and part.Parent and part.CanCollide then
+                    part.CanCollide = false
                 end
             end
         end
@@ -902,61 +1025,6 @@ local function teleportToPlayer(playerName)
     createNotification("Teleported", "Teleported to "..target.Name)
 end
 
---fling hit detection--
-local function startFlingProtection()
-    if flingProtectionConnection then
-        flingProtectionConnection:Disconnect()
-    end
-
-    flingProtectionConnection = RunService.Heartbeat:Connect(function()
-        if not flingActive then
-            return
-        end
-
-        if flingProtectionCooldown then
-            return
-        end
-
-        local myChar = LocalPlayer.Character
-        local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
-        if not myRoot then
-            return
-        end
-
-        for _, plr in ipairs(Players:GetPlayers()) do
-            if plr ~= LocalPlayer and plr.Character then
-                local enemyRoot = plr.Character:FindFirstChild("HumanoidRootPart")
-                local hum = plr.Character:FindFirstChild("Humanoid")
-
-                if enemyRoot and hum then
-                    if (enemyRoot.Position - myRoot.Position).Magnitude <= 8 then
-
-                        local animator = hum:FindFirstChildOfClass("Animator")
-                        if animator then
-                            for _, track in ipairs(animator:GetPlayingAnimationTracks()) do
-                                local id = track.Animation.AnimationId:match("%d+")
-
-                                if id and DangerousAnimations[id] then
-                                    flingProtectionCooldown = true
-
-                                    toggleFling(false)
-
-                                    task.delay(3.5, function()
-                                        toggleFling(true)
-                                        flingProtectionCooldown = false
-                                    end)
-
-                                    return
-                                end
-                            end
-                        end
-                    end
-                end
-            end
-        end
-    end)
-end
-
 ---shadow step logic----
 local function doBlink()
     if not blinkOn or blinkCooldown then return end
@@ -1028,11 +1096,372 @@ end
 table.insert(connections, Players.PlayerAdded:Connect(createNameTag))
 table.insert(connections, Players.PlayerAdded:Connect(createHealthBar))
 
+-- ===== CONFIG SYSTEM =====
+local CONFIG_FOLDER = "MARI_HUB_CONFIGS/"
+local CONFIG_AUTOLOAD_FILE = "MARI_HUB_AUTOLOAD.txt"
+
+local keybindRegistry = {}
+
+local function ensureConfigFolder()
+    if makefolder then
+        pcall(function()
+            makefolder(CONFIG_FOLDER)
+        end)
+    end
+end
+
+local function sanitizeConfigName(name)
+    return tostring(name or ""):gsub("[^%w %-]", ""):gsub("%s+", " "):gsub("^%s+", ""):gsub("%s+$", "")
+end
+
+local function getConfigPath(name)
+    return CONFIG_FOLDER .. name .. ".json"
+end
+
+local function listConfigs()
+    local names = {}
+    if listfiles then
+        local success, files = pcall(function()
+            return listfiles(CONFIG_FOLDER)
+        end)
+        if success then
+            for _, file in ipairs(files) do
+                local fileName = file:gsub("^.*[\\/]", "")
+                local name = fileName:gsub("%.json$", "")
+                if name ~= "" and fileName ~= name then
+                    table.insert(names, name)
+                end
+            end
+        end
+    end
+    table.sort(names)
+    return names
+end
+
+local function refreshConfigDropdowns()
+    local configs = listConfigs()
+    if configDropdown then
+        pcall(function()
+            configDropdown:Refresh(configs, true)
+        end)
+    end
+    if autoLoadDropdown then
+        pcall(function()
+            autoLoadDropdown:Refresh(configs, true)
+        end)
+    end
+end
+
+local function collectSettings()
+    local settings = {
+        autoParryEnabled = autoParryEnabled,
+        pingCompensationEnabled = pingCompensationEnabled,
+        autoFaceEnabled = autoFaceEnabled,
+        healthBarsVisible = healthBarsVisible,
+        flingActive = flingActive,
+        flingPower = flingPower,
+        namesVisible = namesVisible,
+        antiFlingEnabled = antiFlingEnabled,
+        antiVoidEnabled = antiVoidEnabled,
+        flying = flying,
+        flySpeed = flySpeed,
+        noclipEnabled = noclipEnabled,
+        blinkOn = blinkOn,
+        blinkDist = blinkDist,
+        heartAutoEnabled = _G.__heartAuto == true,
+    }
+    for name, entry in pairs(keybindRegistry) do
+        settings[name] = entry.key
+    end
+    return settings
+end
+
+local function saveConfig(name)
+    local cleanName = sanitizeConfigName(name)
+    if cleanName == "" then
+        createNotification("Config", "Enter a config name first!")
+        return false
+    end
+
+    ensureConfigFolder()
+
+    local success, encoded = pcall(function()
+        return HttpService:JSONEncode(collectSettings())
+    end)
+    if not success then
+        createNotification("Config", "Failed to save config.")
+        return false
+    end
+
+    local ok = pcall(function()
+        writefile(getConfigPath(cleanName), encoded)
+    end)
+    if ok then
+        createNotification("Config", "Saved: " .. cleanName)
+        refreshConfigDropdowns()
+        return true
+    end
+
+    createNotification("Config", "Failed to save config.")
+    return false
+end
+
+local function deleteConfig(name)
+    local cleanName = sanitizeConfigName(name)
+    if cleanName == "" then
+        createNotification("Config", "Select a config first!")
+        return false
+    end
+
+    if not delfile or not isfile then
+        createNotification("Config", "File IO unavailable!")
+        return false
+    end
+
+    local path = getConfigPath(cleanName)
+    if not isfile(path) then
+        createNotification("Config", "Config not found: " .. cleanName)
+        refreshConfigDropdowns()
+        return false
+    end
+
+    local ok = pcall(function()
+        delfile(path)
+    end)
+    if ok then
+        createNotification("Config", "Deleted: " .. cleanName)
+        refreshConfigDropdowns()
+        return true
+    end
+
+    createNotification("Config", "Failed to delete config.")
+    return false
+end
+
+local function setToggleIfChanged(tg, value)
+    if tg and tg.CurrentValue ~= value then
+        tg:Set(value)
+    end
+end
+
+local function setKeybindIfChanged(entry, value)
+    if entry and entry.keybind and entry.keybind.CurrentKeybind ~= value then
+        entry.keybind:Set(value)
+    end
+end
+
+local function applySettings(settings)
+    if type(settings) ~= "table" then
+        return
+    end
+
+    setToggleIfChanged(autoParryToggle, settings.autoParryEnabled == true)
+    setToggleIfChanged(pingCompensationToggle, settings.pingCompensationEnabled == true)
+    setToggleIfChanged(autoFaceToggle, settings.autoFaceEnabled == true)
+    setToggleIfChanged(healthBarsToggle, settings.healthBarsVisible == true)
+    setToggleIfChanged(flingToggleRef, settings.flingActive == true)
+    setToggleIfChanged(flingPowerSlider, settings.flingPower or flingPower)
+    setToggleIfChanged(showUsernamesToggle, settings.namesVisible == true)
+    setToggleIfChanged(antiFlingToggle, settings.antiFlingEnabled == true)
+    setToggleIfChanged(antiVoidToggle, settings.antiVoidEnabled == true)
+    setToggleIfChanged(flyToggle, settings.flying == true)
+    setToggleIfChanged(flySpeedSlider, settings.flySpeed or flySpeed)
+    setToggleIfChanged(noclipToggle, settings.noclipEnabled == true)
+    setToggleIfChanged(shadowStepToggle, settings.blinkOn == true)
+    setToggleIfChanged(shadowStepDistSlider, settings.blinkDist or blinkDist)
+    setToggleIfChanged(heartAutoToggle, settings.heartAutoEnabled == true)
+
+    for name, entry in pairs(keybindRegistry) do
+        local value = settings[name]
+        if type(value) == "string" then
+            setKeybindIfChanged(entry, value)
+        end
+    end
+end
+
+local function loadConfig(name)
+    local cleanName = sanitizeConfigName(name)
+    if cleanName == "" then
+        createNotification("Config", "Select a config first!")
+        return false
+    end
+
+    if not isfile or not readfile then
+        createNotification("Config", "File IO unavailable!")
+        return false
+    end
+
+    local path = getConfigPath(cleanName)
+    if not isfile(path) then
+        createNotification("Config", "Config not found: " .. cleanName)
+        refreshConfigDropdowns()
+        return false
+    end
+
+    local success, content = pcall(function()
+        return readfile(path)
+    end)
+    if not success then
+        createNotification("Config", "Failed to read config.")
+        return false
+    end
+
+    local ok, settings = pcall(function()
+        return HttpService:JSONDecode(content)
+    end)
+    if not ok or type(settings) ~= "table" then
+        createNotification("Config", "Config is corrupted.")
+        return false
+    end
+
+    pcall(applySettings, settings)
+    createNotification("Config", "Loaded config: " .. (cleanName ~= "" and cleanName or "n/a"))
+    return true
+end
+
+local function getAutoLoadName()
+    if not isfile or not readfile then
+        return nil
+    end
+    if not isfile(CONFIG_AUTOLOAD_FILE) then
+        return nil
+    end
+
+    local success, content = pcall(function()
+        return readfile(CONFIG_AUTOLOAD_FILE)
+    end)
+    if not success then
+        return nil
+    end
+
+    local name = sanitizeConfigName(content)
+    if name == "" then
+        return nil
+    end
+
+    return name
+end
+
+local function saveAutoLoad(name)
+    local cleanName = sanitizeConfigName(name)
+    if cleanName == "" then
+        createNotification("Auto Load", "Select a config first!")
+        return false
+    end
+
+    local ok = pcall(function()
+        writefile(CONFIG_AUTOLOAD_FILE, cleanName)
+    end)
+    if ok then
+        createNotification("Auto Load", "Auto load set to: " .. cleanName)
+        return true
+    end
+
+    createNotification("Auto Load", "Failed to save auto load.")
+    return false
+end
+
+local function autoLoadOnStart()
+    local autoName = getAutoLoadName()
+    if not autoName then
+        return
+    end
+
+    for _, name in ipairs(listConfigs()) do
+        if name == autoName then
+            task.delay(2, function()
+                loadConfig(autoName)
+            end)
+            return
+        end
+    end
+
+    if delfile then
+        pcall(function()
+            delfile(CONFIG_AUTOLOAD_FILE)
+        end)
+    end
+end
+
 -- ===== RAYFIELD UI =====
+
+local keybindPressedConn
+local lastKeybindBoxName
+local lastReleaseTime
+
+local focusTrackConn1 = UserInputService.TextBoxFocused:Connect(function(tb)
+    if tb and tb.Name == "KeybindBox" then
+        local el = tb.Parent and tb.Parent.Parent
+        if el and el.Name then
+            lastKeybindBoxName = el.Name
+        end
+    end
+end)
+local focusTrackConn2 = UserInputService.TextBoxFocusReleased:Connect(function()
+    lastReleaseTime = tick()
+end)
+table.insert(connections, focusTrackConn1)
+table.insert(connections, focusTrackConn2)
+
+local function createToggleWithKeybind(tab, toggleOptions)
+    local toggle = tab:CreateToggle(toggleOptions)
+
+    local keybindName = (toggleOptions.Name:gsub("^Show ", ""):gsub("^Enable ", "")) .. " Keybind"
+    local keybind = tab:CreateKeybind({
+        Name = keybindName,
+        CurrentKeybind = "None",
+        CallOnChange = true,
+        Callback = function(Key)
+            local entry = keybindRegistry[keybindName]
+            if entry then
+                entry.key = tostring(Key)
+            end
+        end,
+    })
+    keybindRegistry[keybindName] = {
+        keybind = keybind,
+        key = "None",
+        action = function()
+            toggle:Set(not toggle.CurrentValue)
+        end,
+    }
+
+    return toggle
+end
+
+if not keybindPressedConn then
+    keybindPressedConn = UserInputService.InputBegan:Connect(function(input, gameProcessed)
+        if input.KeyCode == Enum.KeyCode.Escape then
+            if lastKeybindBoxName and lastReleaseTime and (tick() - lastReleaseTime) < 1 then
+                local entry = keybindRegistry[lastKeybindBoxName]
+                if entry then
+                    entry.keybind:Set("None")
+                end
+            end
+            lastKeybindBoxName = nil
+            lastReleaseTime = nil
+            return
+        end
+
+        if gameProcessed then return end
+        if UserInputService:GetFocusedTextBox() then return end
+
+        local pressed = input.KeyCode
+        for _, entry in pairs(keybindRegistry) do
+            local keyName = entry.key
+            if keyName and keyName ~= "None" then
+                if pressed == Enum.KeyCode[keyName] then
+                    entry.action()
+                end
+            end
+        end
+    end)
+    table.insert(connections, keybindPressedConn)
+end
 
 -- Combat Tab
 local CombatTab = Window:CreateTab("⚔️ Combat", 4483362458)
-CombatTab:CreateToggle({
+autoParryToggle = createToggleWithKeybind(CombatTab, {
     Name = "Auto Parry",
     CurrentValue = false,
     Callback = function(v)
@@ -1048,7 +1477,7 @@ CombatTab:CreateToggle({
     end
 })
 
-CombatTab:CreateToggle({
+pingCompensationToggle = CombatTab:CreateToggle({
     Name = "Ping Compensation",
     CurrentValue = false,
     Callback = function(v)
@@ -1056,7 +1485,7 @@ CombatTab:CreateToggle({
     end
 })
 
-CombatTab:CreateToggle({
+autoFaceToggle = CombatTab:CreateToggle({
     Name = "Auto Face",
     CurrentValue = false,
     Callback = function(v)
@@ -1067,7 +1496,7 @@ CombatTab:CreateToggle({
     end
 })
 
-CombatTab:CreateToggle({
+healthBarsToggle = CombatTab:CreateToggle({
     Name = "Show Healthbars",
     CurrentValue = false,
     Callback = function(v)
@@ -1080,8 +1509,8 @@ CombatTab:CreateToggle({
 local FlingTab = Window:CreateTab("🚀 Fling", 4483362458)
 
 -- Toggle
-flingToggleRef = FlingTab:CreateToggle({
-    Name = "Enable Fling/freeze",
+flingToggleRef = createToggleWithKeybind(FlingTab, {
+    Name = "Enable Fling",
     CurrentValue = false,
     Callback = function(v)
         if v ~= flingActive then
@@ -1091,7 +1520,7 @@ flingToggleRef = FlingTab:CreateToggle({
 })
 
 -- Power Slider
-FlingTab:CreateSlider({
+flingPowerSlider = FlingTab:CreateSlider({
     Name = "Fling Power",
     Range = {0, 100},
     Increment = 1,
@@ -1229,7 +1658,7 @@ end
 })
 
 -- Usernames Toggle
-FlingTab:CreateToggle({
+showUsernamesToggle = createToggleWithKeybind(FlingTab, {
     Name = "Show Usernames",
     CurrentValue = false,
     Callback = function(v)
@@ -1269,12 +1698,6 @@ healthBarsActive = false
 stopAutoFacing()
 if LocalPlayer.Character and LocalPlayer.Character:GetAttribute("Blocking") == true then
     Block.Unblock()
-end
-
----stop fling hit detection
-if flingProtectionConnection then
-    flingProtectionConnection:Disconnect()
-    flingProtectionConnection = nil
 end
 
 
@@ -1321,6 +1744,9 @@ end
             toggleAntiVoid(false)
          end
 
+         --stop auto heartbeat
+         _G.__heartAuto = false
+
 
         -- Disconnect stored connections
         for _, connection in ipairs(connections) do
@@ -1360,10 +1786,50 @@ end
     end
 })
 
+-- ===== HEART AUTO-CLICK =====
+
+local function getHeartCenter()
+    local pg = LocalPlayer:FindFirstChild("PlayerGui")
+    if not pg then return nil end
+    local deathUI = pg:FindFirstChild("DeathUI")
+    if not deathUI or not deathUI.Enabled then return nil end
+    local frame = deathUI:FindFirstChild("Frame")
+    if not frame then return nil end
+    local heartButton = frame:FindFirstChild("HeartButton")
+    if not heartButton or not heartButton.Visible or not heartButton.Active then return nil end
+    local absPos = heartButton.AbsolutePosition
+    local absSize = heartButton.AbsoluteSize
+    return absPos.X + absSize.X / 2, absPos.Y + absSize.Y / 2
+end
+
+local function ensureHeartMonitor()
+    if not _G.__heartAutoMonitor then
+        _G.__heartAutoMonitor = true
+        task.spawn(function()
+            while _G.__heartAuto do
+                local cx, cy = getHeartCenter()
+                if cx then
+                    while _G.__heartAuto do
+                        local cxx, cyy = getHeartCenter()
+                        if not cxx then break end
+                        VirtualInputManager:SendMouseButtonEvent(cxx, cyy, 0, true, game, 1)
+                        task.wait(0.05)
+                        VirtualInputManager:SendMouseButtonEvent(cxx, cyy, 0, false, game, 1)
+                        task.wait(0.1)
+                    end
+                else
+                    task.wait(0.2)
+                end
+            end
+            _G.__heartAutoMonitor = false
+        end)
+    end
+end
+
 -- ===== MISC TAB =====
 local MiscTab = Window:CreateTab("🛠️ Misc", 4483362458)
 
-MiscTab:CreateToggle({
+antiFlingToggle = MiscTab:CreateToggle({
     Name = "Anti Fling",
     CurrentValue = false,
     Callback = function(v)
@@ -1371,7 +1837,7 @@ MiscTab:CreateToggle({
     end
 })
 
-MiscTab:CreateToggle({
+antiVoidToggle = MiscTab:CreateToggle({
     Name = "Anti Void",
     CurrentValue = false,
     Callback = function(v)
@@ -1379,7 +1845,20 @@ MiscTab:CreateToggle({
     end
 })
 
-MiscTab:CreateToggle({
+_G.__heartAuto = false
+
+heartAutoToggle = MiscTab:CreateToggle({
+    Name = "Auto Heartbeat",
+    CurrentValue = false,
+    Callback = function(v)
+        _G.__heartAuto = v
+        if v then
+            ensureHeartMonitor()
+        end
+    end
+})
+
+flyToggle = createToggleWithKeybind(MiscTab, {
     Name = "Fly",
     CurrentValue = false,
     Callback = function(v)
@@ -1391,7 +1870,7 @@ MiscTab:CreateToggle({
     end
 })
 
-MiscTab:CreateSlider({
+flySpeedSlider = MiscTab:CreateSlider({
     Name = "Fly Speed",
     Range = {1,10},
     Increment = 1,
@@ -1401,7 +1880,7 @@ MiscTab:CreateSlider({
     end
 })
 
-MiscTab:CreateToggle({
+noclipToggle = createToggleWithKeybind(MiscTab, {
     Name = "Noclip",
     CurrentValue = false,
     Callback = function(v)
@@ -1409,7 +1888,7 @@ MiscTab:CreateToggle({
     end
 })
 
-MiscTab:CreateToggle({
+shadowStepToggle = createToggleWithKeybind(MiscTab, {
      Name = "Enable Shadow step",
     CurrentValue = false,
     Callback = function(Value)
@@ -1417,7 +1896,7 @@ MiscTab:CreateToggle({
     end
 })
 
-MiscTab:CreateSlider({
+shadowStepDistSlider = MiscTab:CreateSlider({
     Name = "Shadow step Distance",
     Range = {10,120},
     Increment = 1,
@@ -1499,16 +1978,73 @@ MiscTab:CreateButton({
     end
 })
 
--- ===== KEYBINDS =====
-table.insert(connections,
-    UserInputService.InputBegan:Connect(function(input, gameProcessed)
-        if gameProcessed then return end
+-- ===== CONFIG TAB =====
+local ConfigTab = Window:CreateTab("⚙️ Config", 4483362458)
 
-        if input.KeyCode == Enum.KeyCode.X then
-            toggleFling(nil)
+ConfigTab:CreateInput({
+    Name = "Config Name",
+    PlaceholderText = "Name for your config...",
+    RemoveTextAfterFocusLost = false,
+    Callback = function(text)
+        configNameInput = text
+    end
+})
+
+ConfigTab:CreateButton({
+    Name = "Save Config",
+    Callback = function()
+        saveConfig(configNameInput)
+    end
+})
+
+configDropdown = ConfigTab:CreateDropdown({
+    Name = "Select Config",
+    Options = {},
+    CurrentOption = "",
+    Callback = function(option)
+        if typeof(option) == "table" then
+            option = option[1]
         end
-    end)
-)
+        selectedConfig = option or nil
+    end
+})
+
+ConfigTab:CreateButton({
+    Name = "Load Config",
+    Callback = function()
+        loadConfig(selectedConfig)
+    end
+})
+
+autoLoadDropdown = ConfigTab:CreateDropdown({
+    Name = "Auto Load Config",
+    Options = {},
+    CurrentOption = "",
+    Callback = function(option)
+        if typeof(option) == "table" then
+            option = option[1]
+        end
+        autoLoadSelected = option or nil
+    end
+})
+
+ConfigTab:CreateButton({
+    Name = "Auto Load Save",
+    Callback = function()
+        saveAutoLoad(autoLoadSelected)
+    end
+})
+
+ConfigTab:CreateButton({
+    Name = "Delete Config",
+    Callback = function()
+        deleteConfig(selectedConfig)
+    end
+})
+
+-- Populate config dropdowns and apply auto-load if set
+task.delay(0.3, refreshConfigDropdowns)
+autoLoadOnStart()
 
 -- ===== AUTO PARRY LOGIC =====
 local CombatConfig = require(ReplicatedStorage.Shared.Config.CombatConfig)
@@ -1742,8 +2278,6 @@ for _, player in ipairs(Players:GetPlayers()) do
     wireAutoParryPlayer(player)
 end
 table.insert(connections, Players.PlayerAdded:Connect(wireAutoParryPlayer))
-
-startFlingProtection()
 
 -- ===== STARTUP =====
 if isBypassUser(LocalPlayer.UserId) then
