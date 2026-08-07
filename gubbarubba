@@ -198,7 +198,7 @@ local blinkDist = 40
 
 -----fly input listeners---
 
-UserInputService.InputBegan:Connect(function(input, processed)
+local flyInputBeganConn = UserInputService.InputBegan:Connect(function(input, processed)
     if processed then return end
     if not flying then return end
 
@@ -217,7 +217,7 @@ UserInputService.InputBegan:Connect(function(input, processed)
     end
 end)
 
-UserInputService.InputEnded:Connect(function(input)
+local flyInputEndedConn = UserInputService.InputEnded:Connect(function(input)
     if not flying then return end
 
     if input.KeyCode == Enum.KeyCode.W then
@@ -234,6 +234,8 @@ UserInputService.InputEnded:Connect(function(input)
         CONTROL.E = 0
     end
 end)
+table.insert(connections, flyInputBeganConn)
+table.insert(connections, flyInputEndedConn)
 
 -- ===== SOUND =====
 local sound = Instance.new("Sound")
@@ -353,6 +355,7 @@ end
 -- ===== FLING LOGIC =====
 local flingPartsByChar = {}
 local flingCharConnections = {}
+local flingCollisionState = {}
 
 local function onFlingPartAdded(char, desc)
     if desc:IsA("BasePart") then
@@ -401,6 +404,230 @@ local function clearFlingWiring()
     table.clear(flingPartsByChar)
 end
 
+local function setPartGhosted(part)
+    if flingCollisionState[part] == nil then
+        flingCollisionState[part] = part.CanCollide
+    end
+    part.CanCollide = false
+end
+
+local function restoreGhostedParts()
+    for part, state in pairs(flingCollisionState) do
+        if part and part.Parent then
+            part.CanCollide = state
+        end
+    end
+    table.clear(flingCollisionState)
+end
+
+local function zeroCharacterVelocity(char)
+    if not char then
+        return
+    end
+    for _, part in ipairs(char:GetDescendants()) do
+        if part:IsA("BasePart") then
+            part.Velocity = Vector3.zero
+            pcall(function()
+                part.AssemblyLinearVelocity = Vector3.zero
+            end)
+        end
+    end
+end
+
+local function stopFlingLoop()
+    flingActive = false
+    if flingConnection then
+        flingConnection:Disconnect()
+        flingConnection = nil
+    end
+    clearFlingWiring()
+    updateTargetStatusLabel()
+end
+
+local function stopFlingOnDeath()
+    if not flingActive then
+        return
+    end
+
+    stopFlingLoop()
+    pcall(restoreGhostedParts)
+    pcall(zeroCharacterVelocity, LocalPlayer.Character)
+end
+
+local startFlingMonitor
+
+local function startFlingLoop()
+    if not flingActive or flingConnection then
+        return
+    end
+    flingConnection = RunService.PostSimulation:Connect(function()
+        if not flingActive then return end
+        if not LocalPlayer.Character then return end
+        local hrp = LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+        if not hrp then return end
+
+        local victims = {}
+        if targetMode and targetPlayer and targetPlayer.Character then
+            table.insert(victims, targetPlayer.Character)
+        else
+            for _, p in pairs(Players:GetPlayers()) do
+                if p ~= LocalPlayer and p.Character then
+                    table.insert(victims, p.Character)
+                end
+            end
+        end
+
+        for _, char in ipairs(victims) do
+            wireFlingCharacter(char)
+        end
+
+        for _, char in ipairs(victims) do
+            local parts = flingPartsByChar[char]
+            if parts then
+                for _, part in ipairs(parts) do
+                    if part and part.Parent and part.CanCollide then
+                        setPartGhosted(part)
+                    end
+                end
+            end
+        end
+
+        local shouldFling = false
+        if targetMode and targetPlayer then
+            if targetPlayer.Character then
+                local tHrp = targetPlayer.Character:FindFirstChild("HumanoidRootPart")
+                if tHrp then
+                    local dist = (hrp.Position - tHrp.Position).Magnitude
+                    if dist <= 20 then shouldFling = true end
+                end
+            end
+        else
+            for _, p in pairs(Players:GetPlayers()) do
+                if p ~= LocalPlayer and p.Character then
+                    local tHrp = p.Character:FindFirstChild("HumanoidRootPart")
+                    if tHrp then
+                        local dist = (hrp.Position - tHrp.Position).Magnitude
+                        if dist <= 20 then
+                            shouldFling = true
+                            break
+                        end
+                    end
+                end
+            end
+        end
+
+        if shouldFling then
+            local playerGhosted = {}
+            for _, v in pairs(LocalPlayer.Character:GetDescendants()) do
+                if v:IsA("BasePart") and v.CanCollide then
+                    setPartGhosted(v)
+                    table.insert(playerGhosted, v)
+                end
+            end
+            local strength = flingPower * 100
+            local oldV = hrp.Velocity
+            local newV = Vector3.new(strength, strength, strength)
+            pcall(function()
+                hrp.Velocity = newV
+                hrp.AssemblyLinearVelocity = newV
+            end)
+            pcall(function()
+                RunService.RenderStepped:Wait()
+            end)
+            pcall(function()
+                hrp.Velocity = oldV
+                hrp.AssemblyLinearVelocity = oldV
+            end)
+            for _, part in ipairs(playerGhosted) do
+                if part and part.Parent then
+                    part.CanCollide = true
+                end
+                flingCollisionState[part] = nil
+            end
+        end
+    end)
+    startFlingMonitor()
+end
+
+local function wireFlingDeath()
+    local function wireChar(char)
+        local hum = char:WaitForChild("Humanoid", 10)
+        if hum then
+            table.insert(connections, hum.Died:Connect(stopFlingOnDeath))
+        end
+    end
+
+    local char = LocalPlayer.Character
+    if char then
+        task.spawn(wireChar, char)
+    end
+
+    table.insert(connections, LocalPlayer.CharacterAdded:Connect(function(char)
+        task.spawn(wireChar, char)
+        if flingActive then
+            startFlingMonitor()
+        end
+    end))
+end
+
+wireFlingDeath()
+
+local flingMonitorConn = nil
+local flingDeathActive = false
+local deathChar = nil
+local flingWasActive = false
+
+local function stopFlingMonitor()
+    if flingMonitorConn then
+        flingMonitorConn:Disconnect()
+        flingMonitorConn = nil
+    end
+    flingDeathActive = false
+    deathChar = nil
+    flingWasActive = false
+end
+
+startFlingMonitor = function()
+    if flingMonitorConn then
+        return
+    end
+    flingMonitorConn = RunService.Heartbeat:Connect(function()
+        if not flingActive and not flingWasActive then
+            return
+        end
+        local char = LocalPlayer.Character
+        if not char then
+            stopFlingMonitor()
+            return
+        end
+        local hum = char:FindFirstChildOfClass("Humanoid")
+        local dead = hum and hum.Health <= 0
+
+        if dead then
+            if not flingDeathActive then
+                flingDeathActive = true
+                deathChar = char
+                if flingActive then
+                    flingWasActive = true
+                    stopFlingOnDeath()
+                end
+            end
+        else
+            if flingDeathActive then
+                flingDeathActive = false
+                if deathChar == char and flingWasActive then
+                    flingWasActive = false
+                    flingActive = true
+                    startFlingLoop()
+                else
+                    flingWasActive = false
+                end
+                deathChar = nil
+            end
+        end
+    end)
+end
+
 local function toggleFling(newState)
     if newState == nil then
         flingActive = not flingActive
@@ -417,69 +644,17 @@ local function toggleFling(newState)
     updateTargetStatusLabel()
 
     if flingActive then
-        if not flingConnection then
-            flingConnection = RunService.PostSimulation:Connect(function()
-                if not flingActive then return end
-                if not LocalPlayer.Character then return end
-                local hrp = LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-                if not hrp then return end
-
-                for _, p in pairs(Players:GetPlayers()) do
-                    if p ~= LocalPlayer and p.Character then
-                        wireFlingCharacter(p.Character)
-                    end
-                end
-
-                for _, parts in pairs(flingPartsByChar) do
-                    for _, part in ipairs(parts) do
-                        if part and part.Parent and part.CanCollide then
-                            part.CanCollide = false
-                        end
-                    end
-                end
-
-                local shouldFling = false
-                if targetMode and targetPlayer then
-                    if targetPlayer.Character then
-                        local tHrp = targetPlayer.Character:FindFirstChild("HumanoidRootPart")
-                        if tHrp then
-                            local dist = (hrp.Position - tHrp.Position).Magnitude
-                            if dist <= 20 then shouldFling = true end
-                        end
-                    end
-                else
-                    for _, p in pairs(Players:GetPlayers()) do
-                        if p ~= LocalPlayer and p.Character then
-                            local tHrp = p.Character:FindFirstChild("HumanoidRootPart")
-                            if tHrp then
-                                local dist = (hrp.Position - tHrp.Position).Magnitude
-                                if dist <= 20 then
-                                    shouldFling = true
-                                    break
-                                end
-                            end
-                        end
-                    end
-                end
-
-                if shouldFling then
-                    for _, v in pairs(LocalPlayer.Character:GetDescendants()) do
-                        if v:IsA("BasePart") and v.CanCollide then v.CanCollide = false end
-                    end
-                    local strength = flingPower * 5000
-                    local oldV = hrp.Velocity
-                    hrp.Velocity = Vector3.new(strength, strength, strength)
-                    RunService.RenderStepped:Wait()
-                    hrp.Velocity = oldV
-                end
-            end)
-        end
+        startFlingLoop()
     else
-        if flingConnection then
-            flingConnection:Disconnect()
-            flingConnection = nil
-        end
-        clearFlingWiring()
+        stopFlingLoop()
+        stopFlingMonitor()
+        restoreGhostedParts()
+        zeroCharacterVelocity(LocalPlayer.Character)
+        task.delay(0.1, function()
+            if not flingActive then
+                zeroCharacterVelocity(LocalPlayer.Character)
+            end
+        end)
     end
 end
 
@@ -1076,11 +1251,9 @@ local function rejoinServer()
         return
     end
     rejoinCooldown = true
-    flingActive = false
-    if flingConnection then
-        flingConnection:Disconnect()
-        flingConnection = nil
-    end
+    stopFlingLoop()
+    stopFlingMonitor()
+    restoreGhostedParts()
     createNotification("Rejoining", "Teleporting...")
     pcall(function()
         TeleportService:TeleportToPlaceInstance(game.PlaceId, game.JobId, LocalPlayer)
@@ -1726,18 +1899,23 @@ end
 end
 
          -- Stop fling
-        flingActive = false
-
-        if flingConnection then
-            flingConnection:Disconnect()
-            flingConnection = nil
-        end
+        stopFlingLoop()
+        stopFlingMonitor()
+        restoreGhostedParts()
 
          --stop antifling
       if antiFlingConnection then
       antiFlingConnection:Disconnect()
       antiFlingConnection = nil
    end
+   antiFlingEnabled = false
+   for part, value in pairs(originalCanCollide) do
+       if part and part.Parent then
+           part.CanCollide = value
+       end
+   end
+   table.clear(originalCanCollide)
+   clearAntiFlingWiring()
 
          --stop antivoid
          if antiVoidEnabled then
